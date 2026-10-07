@@ -1,0 +1,35 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Private animal colony stock requirements prototype for the St Andrews project."><title>Colony Stock · St Andrews project</title><link rel="stylesheet" href="./styles.css"></head><body>
+<a class="skip" href="#main">Skip to content</a><div class="shell"><aside class="sidebar">
+<a class="brand" href="#overview"><span class="brand-mark" aria-hidden="true">CS</span><span>COLONY STOCK<small>St Andrews project</small></span></a>
+<div class="workspace-label">COLONY WORKSPACE</div><nav aria-label="Main navigation">
+<a href="#overview" data-page="overview"><span aria-hidden="true">◫</span>Overview</a>
+<a href="#stock" data-page="stock"><span aria-hidden="true">▤</span>Animal register <b id="nav-count"></b></a>
+<a href="#housing" data-page="housing"><span aria-hidden="true">▦</span>Rooms & cages</a>
+<a href="#reports" data-page="reports"><span aria-hidden="true">◷</span>Daily reports</a>
+<a href="#groups" data-page="groups"><span aria-hidden="true">◇</span>Groups</a>
+<a href="#favourites" data-page="favourites"><span aria-hidden="true">☆</span>Favourites</a>
+<a href="#history" data-page="history"><span aria-hidden="true">↺</span>Record history</a>
+</nav><div class="sidebar-bottom"><a href="#brief" data-page="brief">Project brief <span>↗</span></a><div class="identity"><span class="avatar">D</span><div>Demo researcher<small>Prototype workspace</small></div></div></div></aside>
+<div class="main-shell"><header class="topbar"><span>University of St Andrews <span class="separator">/</span> Research colony</span><span class="prototype-pill">PROTOTYPE</span></header>
+<div class="demo-banner"><span class="dot"></span><span><strong>Synthetic demo data.</strong> Saved in this browser only. Shared team access and university sign-in are planned.</span><button id="backup" class="text-button">Download backup</button></div>
+<main id="main" tabindex="-1"></main><footer>Colony Stock <span>Requirements prototype · v0.1</span></footer></div></div>
+<dialog id="record-dialog"><form id="record-form">
+<div class="dialog-heading"><div><div class="eyebrow">ANIMAL REGISTER</div><h2 id="record-title">Add animal</h2></div><button type="button" class="icon-button" data-close="record-dialog" aria-label="Close animal form">×</button></div>
+<p class="subtle">Unknown birth dates are allowed. Deceased animals stay in the register.</p><div id="form-errors" role="alert"></div><div class="form-grid">
+<label>Animal ID *<input name="id" required maxlength="60" placeholder="e.g. BAT-019"></label>
+<label>Species *<input name="species" required maxlength="120" placeholder="Species or Unknown"></label>
+<label>Sex<select name="sex"><option>Unknown</option><option>Female</option><option>Male</option></select></label>
+<label>Line / strain<input name="line" maxlength="120"></label>
+<label>Room *<select name="room" required></select></label><label>Cage *<select name="cage" required></select></label>
+<label>Date of birth<input name="dob" type="date"><small>Leave empty if unknown.</small></label>
+<label>Date of death<input name="dod" type="date"><small>A date marks the animal as deceased.</small></label>
+<label>Parent 1<input name="mother" list="parent-ids" placeholder="Animal ID, if known"></label>
+<label>Parent 2<input name="father" list="parent-ids" placeholder="Animal ID, if known"></label>
+<label class="full">Place of birth<input name="pob" maxlength="160"><small>Location where the animal was born, if known.</small></label>
+<label class="full">Notes<textarea name="notes" rows="3" maxlength="4000" placeholder="Record context and corrections"></textarea></label>
+<div id="custom-inputs" class="full form-grid"></div></div><datalist id="parent-ids"></datalist>
+<div class="dialog-actions"><button type="button" class="button secondary" data-close="record-dialog">Cancel</button><button class="button primary" type="submit">Save record</button></div></form></dialog>
+<dialog id="detail-dialog"><div id="detail-content"></div></dialog>
+<dialog id="group-dialog"><form id="group-form"><div class="dialog-heading"><h2 id="group-title">Create research group</h2><button class="icon-button" type="button" data-close="group-dialog" aria-label="Close group form">×</button></div><p class="subtle">A named collection of selected animal records.</p><label>Group name<input name="name" required maxlength="100" placeholder="e.g. Observation group A"></label><label style="margin-top:15px">Research notes<textarea name="notes" rows="2" maxlength="4000" placeholder="Purpose and context of this cohort"></textarea></label><fieldset id="group-members"><legend>Animals</legend></fieldset><div id="group-error" role="alert"></div><div class="dialog-actions"><button type="button" class="button secondary" data-close="group-dialog">Cancel</button><button class="button primary" type="submit">Create group</button></div></form></dialog>
+<dialog id="columns-dialog"><div class="dialog-heading"><h2>Configure columns</h2><button class="icon-button" data-close="columns-dialog" aria-label="Close column settings">×</button></div><p class="subtle">Rename, show or reorder columns. Custom fields support editable values in each animal record.</p><div id="column-list"></div><form id="field-form"><h3>Add a field</h3><div class="form-grid"><label>Column heading<input name="label" required maxlength="60" placeholder="e.g. Research group"></label><label>Data type<select name="type"><option value="text">Text</option><option value="number">Number</option><option value="date">Date</option><option value="select">Dropdown</option></select></label><label class="full">Dropdown choices<input name="options" placeholder="Separate choices with commas"><small>Required only for dropdown fields.</small></label></div><div id="field-error" role="alert"></div><button class="button secondary" type="submit">Add field</button></form><div class="dialog-actions"><button class="button secondary" data-close="columns-dialog">Cancel</button><button id="save-columns" class="button primary">Save column layout</button></div></dialog>
+<div id="toast" role="status" aria-live="polite"></div><script type="module" src="./app.mjs"></script></body></html>
