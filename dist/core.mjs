@@ -18,9 +18,10 @@ export function validateAnimal(a,animals,locations,originalId=null,at=today(),sc
  if(a.id?.length>60)errors.push('Animal ID must be 60 characters or fewer.');
  if(animals.some(x=>x.id===a.id&&x.id!==originalId))errors.push('That Animal ID already exists.');
  if(originalId&&a.id!==originalId)errors.push('Animal ID cannot be changed in this prototype.');
- if(!['Female','Male','Unknown'].includes(a.sex))errors.push('Choose a valid sex.');
+ if(!(schema.find(f=>f.key==='sex')?.options||['Female','Male','Unknown']).includes(a.sex))errors.push('Choose a valid sex.');
  if(!a.species?.trim())errors.push('Species is required; use Unknown if unconfirmed.');
- if(!locations.some(x=>x.room===a.room&&x.cage===a.cage))errors.push('Select a cage within its room.');
+ const original=animals.find(x=>x.id===originalId),historicHousing=original&&(a.dod||a.departed||a.archived)&&original.room===a.room&&original.cage===a.cage;
+ if(!locations.some(x=>x.room===a.room)|| (a.cage&&!locations.some(x=>x.room===a.room&&x.cage===a.cage)&&!historicHousing))errors.push('Select a cage within its room, or leave cage empty for communal housing.');
  for(const key of ['dob','dod']){
   if(a[key]&&!validDate(a[key]))errors.push('Enter a valid '+(key==='dob'?'birth':'death')+' date.');
   else if(a[key]&&a[key]>at)errors.push('Birth and death dates cannot be in the future.');
@@ -32,7 +33,7 @@ export function validateAnimal(a,animals,locations,originalId=null,at=today(),sc
  if(a.mother&&a.mother===a.father)errors.push('The two parent references must be different.');
  for(const id of [a.mother,a.father].filter(Boolean)){const p=graph.get(id);if(!p)errors.push('Parent '+id+' is not in the register.');else if(p.dob&&a.dob&&p.dob>a.dob)errors.push('A parent cannot be born after this animal.');}
  for(const f of schema.filter(x=>x.custom)){
-  const v=a.extra?.[f.key];if(v===''||v==null)continue;
+  const v=a.extra?.[f.key];if(v===''||v==null){if(f.required)errors.push(f.label+' is required.');continue;}
   if(f.type==='number'&&!Number.isFinite(Number(v)))errors.push(f.label+' must be a number.');
   if(f.type==='date'&&!validDate(v))errors.push(f.label+' must be a valid date.');
   if(f.type==='select'&&!f.options.includes(v))errors.push('Choose a valid value for '+f.label+'.');
@@ -63,7 +64,7 @@ export function saveAnimal(state,a,actor,at=new Date().toISOString(),originalId=
 export function asOf(state,date){const events=state.events.filter(e=>e.at.slice(0,10)<=date).sort((a,b)=>a.at.localeCompare(b.at));return events.length?structuredClone(events.at(-1).snapshot):null;}
 export function filterAnimals(animals,f={}){
  const q=(f.search||'').trim().toLowerCase();
- return animals.filter(a=>(!q||[a.id,a.species,a.room,a.cage,a.line,a.notes,a.mother,a.father,...Object.values(a.extra||{})].some(v=>String(v||'').toLowerCase().includes(q)))&&(!f.room||a.room===f.room)&&(!f.cage||a.cage===f.cage)&&(!f.sex||a.sex===f.sex)&&(!f.line||a.line===f.line)&&(!f.status||f.status==='all'||(f.status==='living'?!a.dod:!!a.dod))&&(!f.favourites||f.favourites.includes(a.id))&&(!f.group||f.group.includes(a.id)));
+ return animals.filter(a=>!a.archived&&(!q||[a.id,a.species,a.room,a.cage,a.line,a.notes,a.mother,a.father,...Object.values(a.extra||{})].some(v=>String(v||'').toLowerCase().includes(q)))&&(!f.room||a.room===f.room)&&(!f.cage||a.cage===f.cage)&&(!f.communal||!a.cage)&&(!f.sex||a.sex===f.sex)&&(!f.line||a.line===f.line)&&(!f.status||f.status==='all'||(f.status==='living'?!a.dod&&!a.departed:f.status==='departed'?!!a.departed:!!a.dod))&&(!f.favourites||f.favourites.includes(a.id))&&(!f.group||f.group.includes(a.id)));
 }
 export function cell(a,key,at=today()){
  return key==='parents'?[a.mother,a.father].filter(Boolean).join(' / '):key==='age'?age(a.dob,at,a.dod):key.startsWith('custom_')?(a.extra?.[key]??''):(a[key]||'');
@@ -82,7 +83,7 @@ export function groupTimeline(state,id){
  for(const e of [...state.events].sort((a,b)=>a.at.localeCompare(b.at))){
   if(e.groupId===id){members=e.groupAfter.animalIds;events.push(e);}
   if(members===null)continue;
-  if(e.animalId&&members.includes(e.animalId))events.push(e);
+  if((e.animalId&&members.includes(e.animalId))||e.animalIds?.some(id=>members.includes(id)))events.push(e);
   const records=e.snapshot.filter(a=>members.includes(a.id));
   days.set(e.at.slice(0,10),{date:e.at.slice(0,10),members:members.length,living:records.filter(a=>!a.dod).length,deceased:records.filter(a=>a.dod).length});
  }

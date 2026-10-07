@@ -1,36 +1,71 @@
 # Colony Stock — St Andrews project
 
-Private v0.1 requirements prototype with synthetic data. Bats first; a species field
-supports other animals in future. Everyone on the future team will be able to view and edit.
+Private v0.2 requirements prototype using synthetic data. Demonstrates colony workflows
+before a decision to build a shared university application. About 170 bats is the expected
+real starting volume; it is not a fixed limit or the synthetic sample size.
 
 ## Run
+
 Node.js 20+; no dependencies.
 
     npm run dev
 
-Open http://127.0.0.1:4173. Run domain/export tests with npm test.
+Open http://127.0.0.1:4173 in a modern browser with Web Locks support.
 
-## Working features
-Dashboard; search and room/cage/sex/line/status filters; editable animal records;
-birth and death dates with correction history; parent references with cycle prevention;
-favourites; research cohorts with editable membership, daily counts and history; complete birth/death lists and daily saved-state reports;
-before/after history; Excel (.xlsx) and CSV export; JSON backup download.
-Rename, reorder and hide columns, or add typed text/number/date/dropdown fields.
-Each custom field has editable values on the animal form. Exports follow visible column order.
+    npm test
 
-## Persistence and reporting
-Data is in localStorage per browser origin, not shared between users or localhost and the Site.
-The demo actor is not institutional identity. Browser history is not a permanent audit trail.
-The confirmed shared-system requirement is an exact rolling five-year history of all bat data.
-This prototype does not guarantee five-year retention. See the requirements brief for retention
-triggers, protected history, field-definition versions, archival rules and restoration checks.
-Saving fails visibly if storage is unavailable/full; stale tabs cannot overwrite newer data.
-Full stock shows what was saved by the selected UTC day. Birth/death reports use currently
-known event dates, including backdated corrections. Earlier unrecorded snapshots are unavailable.
-XLSX values are text for human-readable output; numeric/date Excel formatting is future work.
-Locations are fixed demo configuration. Estimated-date precision and actual imports are pending.
-JSON restore, permanent audit storage, concurrent shared editing, university SSO and team
-membership are not implemented. Download a backup before clearing browser data.
+## Prototype features
 
-See docs/REQUIREMENTS.md for decisions and the path to a shared university application.
-This is an independently prepared prototype, not an official university website.
+Register/dashboard, filters, animal details and history; arrivals/departures, births/deaths;
+optional cages and communal rooms; housing lists and reviewed cage moves. Parent references
+prevent cycles; selectable pedigree shows four ancestor generations and direct children.
+
+Research cohorts with membership history and dated individual/cohort entries. Starter categories
+include Behaviour, Surgery, Harvest, Swab sampling and Wing punch. Administrators configure typed
+animal/research fields, allowed choices, requiredness, labels, order/visibility and sex choices.
+Captured research entries keep their field definitions and membership as recorded.
+
+Daily records contain current stock, births and deaths. Same-day manual saves replace the set;
+prior days are immutable. Source is Manual/Automatic, and animal changes since the last manual
+capture are indicated. Each set retains readable CSV content; download a ZIP containing
+stock.csv, births.csv, deaths.csv and capture metadata. Daily CSV archives include hidden fields
+so display choices cannot remove retained values. Individual CSV/Excel exports remain available.
+
+Student, Researcher and Administrator previews demonstrate restrictions. Students are read-only;
+administrators configure fields/locations and can recover an animal baseline from a saved day.
+Recovery previews changes, appends history, preserves daily/research records, groups and schema,
+and archives later animal IDs. It is not a full database restore.
+
+Embedded section help, extensive-change confirmations, favourites and JSON backup download.
+
+## Daily timing and storage
+
+UTC is provisional. Same-day records are replaceable until day end; prior-day event corrections
+are not supported. An arriving adult can have an older birth date as background information.
+Automatic fallback preserves a manual set: staff must resave for later changes to be included.
+Live operational data continues independently of the saved reports.
+
+Automatic fallback can be disabled by an Administrator. It checks while open and can save
+yesterday on reopening after tracking starts. A closed browser cannot guarantee midnight saving
+or catch up an arbitrary downtime period. Production needs a reliable server scheduler.
+
+All operational data and saved CSV content live in localStorage for this browser origin.
+Download CSV packages and JSON backups to create separate copies. This is not protected university
+storage; different origins/profiles/computers do not share data. Web Locks serialize same-origin
+writes; stale-state checks prevent silent overwrites and leave conflicting forms open. Copy
+entered work before reloading to reconcile. Storage failures are visible and preserve prior data.
+
+## Production still required
+
+Role switching is a demonstration, not authentication. Browser history/localStorage do not
+guarantee protected five-year retention. Shared SQL storage, university sign-in, real permissions,
+server concurrency, scheduling, protected exports, encrypted independent backups, monitoring and
+tested full restoration need server infrastructure.
+
+Full JSON restore, spreadsheet import and multiple databases are deferred. The production stack
+and hosting remain provisional until prototype success. CSV is the required reporting format
+identified by the user; the institution must confirm contents and retention obligations.
+
+Download a backup before clearing browser data. See [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)
+for decisions, open details and acceptance criteria. This is independently prepared, not an
+official university website.

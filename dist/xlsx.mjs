@@ -2,7 +2,7 @@ const enc=new TextEncoder();
 const xml=s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&apos;").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'');
 function column(n){let s='';while(n){n--;s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26);}return s;}
 function crc32(bytes){let c=0xffffffff;for(const b of bytes){c^=b;for(let k=0;k<8;k++)c=(c>>>1)^((c&1)?0xedb88320:0);}return(c^0xffffffff)>>>0;}
-function zip(files){
+export function zip(files){
  const parts=[],central=[];let offset=0;
  for(const [name,body]of Object.entries(files)){
   const n=enc.encode(name),data=enc.encode(body),crc=crc32(data),head=new Uint8Array(30+n.length),v=new DataView(head.buffer);

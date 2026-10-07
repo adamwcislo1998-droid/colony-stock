@@ -1,119 +1,209 @@
-# St Andrews colony stock: requirements and decisions
+# Colony Stock: requirements and decisions
 
-Source: two photographed meeting notes and project discussion, 7 October 2026.
-Working interpretations, not an approved institutional specification.
+Updated 7 October 2026 from photographed meeting notes and project discussion.
+This is a prototype specification, not an approved institutional or legal specification.
 
-## Confirmed by the user
-- Bats initially; allow future expansion to other animals.
-- Everyone on the team can view and edit.
-- PoB means Place of birth. Groups are research cohorts tracked over time.
-- The sketched table supplies initial columns.
-- Column headings/order and the data stored in columns should be configurable.
-- Permanent records mean an exact rolling five-year history of all bat data and changes.
+## Purpose and scope
 
-## Clear meeting requirements
-- Full shared animal database, replacing dependence on a large Excel file.
-- Human-readable Excel export with preserved column order.
-- Main register, rooms and cages; birth/death lists.
-- Three daily lists, best reading: Birth, Death, Full.
-- Previous-day records, version/record history.
-- Favourites and functions for named groups.
+Create a shared colony register that replaces operational dependence on Excel.
+Start with bats and approximately 170 current animals; this is a starting volume, not a
+fixed limit. Demonstrate workflows using synthetic data before production proceeds.
+Daily stock staff and researchers work concurrently on the same records, using daily
+reporting, individual/group history, housing, pedigree and research views.
 
-Sketch columns: Sex, Animal ID, Room, Cage, Line, PoB, Parents, Age, Notes, Date of birth, Date of death.
-The prototype adds species, derived status and parent references.
-Age derives from known dates and stops at death. Unknown birth dates are supported.
+Multiple databases and CSV import are deferred. Future compatibility can be added later.
+A future import must validate data and cannot reconstruct unavailable history.
+University resources and the final production stack remain unknown. Production proceeds
+only after a successful prototype review.
 
-## Open decisions
-1. Exact bat species and lineage/genetics conventions. PoB confirmed as Place of birth.
-2. ID format and how to represent estimated birth dates.
-3. Research cohorts confirmed: create groups and track them over time. Membership history and member activity are implemented; further research measurements remain to be defined.
-4. Confirm the institutional retention policy, disposal-date trigger and any longer retention periods. Permanent records are confirmed as rolling five-year exact history.
-5. Daily reports: effective date versus entry date; cutoff and timezone.
-6. University hosting/SSO, membership management, record volumes and concurrent staff.
-7. Spreadsheet import mapping, duplicate resolution, reconciliation and retention.
+## Daily records: final agreed rules
 
-## v0.1 acceptance scope
-Browser-local private synthetic demo: register and filters, fixed rooms/cages,
-add/edit records, favourites, research groups with membership history and saved daily counts, daily and complete reports,
-XLSX/CSV exports and JSON backup. Configurable column labels/order/visibility
-plus typed custom fields with editable record values.
+Each reporting date has one current saved set of three tables:
+1. Current stock (living animals present in the colony).
+2. Births with an effective event date on that date only.
+3. Deaths with an effective event date on that date only.
 
-Report semantics:
-- Birth/death reports use the currently known effective date.
-- Full report loads the last recorded snapshot on or before the selected UTC day.
-- Full reports explicitly show saved state known then, rather than retrospective corrected truth.
-- Dates before the first saved state show unavailable, not a false empty colony.
-- Historic location/state is retained in snapshots.
-- IDs unique and not renamed; parent references non-cyclic.
-- Room/cage pairs must exist; death cannot precede known birth.
-- Animal edits retain before/after, recorded timestamp and a demo actor.
-- Column settings are shared only within this local demo store; custom values remain when hidden.
+- Saving does not close the day or prevent continued animal/research editing.
+- During the same reporting day, another manual save replaces that date's previous set.
+- Generate all three tables and their CSV copies from one consistent database state.
+- At day end the saved set becomes final. Closed sets cannot be overwritten. Late or
+  backdated corrections are not allowed.
+- Retain underlying edit history and the attribution/content of same-day replacements.
+- If no manual set exists, automatic generation runs around midnight, captures recorded
+  changes and is clearly labelled Automatic. Carry unchanged stock forward only when
+  no changes occurred.
+- If a manual set exists at cutoff, freeze its latest version. Automatic fallback does
+  not replace it. Later live changes are absent from that set unless staff save again;
+  show a visible changes-since-save signal.
+- Each set identifies date, capture time, actor/source and version.
+- Administrators can disable automatic generation for a manual-only workflow.
+- Missing daily records show unavailable, not a falsely empty colony.
+- Live operational data continues into the next day independently. Opening/saving a
+  report never resets the database to an earlier manual snapshot.
+- Support arrivals and departures separately from births and deaths.
 
-## Shared system plan
-Use relational server storage: Animal (immutable internal key, separate displayed ID),
-Location, AnimalEvent, Membership, Group, GroupMember, FieldDefinition and AnimalFieldValue.
-Everybody with active membership can read/edit. Administrator membership/configuration
-responsibilities remain to be agreed; no speculative restrictive researcher roles.
-Store before/after, authenticated actor, effective date, recorded time and optimistic
-concurrency version transactionally. Append corrective history rather than deleting edits.
-Keep favourites per user; decide whether column layouts are per user or team-wide.
-Index ID/location/event dates; server-side paginated search and streamed exports for scale.
-University SSO, access checks, operational backups and history durability need real server infrastructure.
-No live institutional data or credentials are included in the prototype.
+UTC is a provisional prototype convention. Production cutoff/timezone and missed-job
+policy require agreement. Production must use reliable server time and a scheduler.
+The local demo checks while open and can check yesterday on reopening after tracking
+starts. A closed browser cannot guarantee midnight execution or arbitrary downtime catch-up.
+A new arriving adult may have an older birth date as background information; this does
+not create retrospective daily records. Earlier recorded event dates cannot be corrected.
 
-## Permanent records and rolling five-year history
+## Identity, configurable fields and uncertainty
 
-Confirmed requirement: retain an exact, traceable rolling five-year history of all bat data,
-not only an animal's latest values or occasional stock totals. This is a shared-system
-acceptance requirement; the browser-local prototype does not provide that guarantee.
+Animal ID is required and unique across all retained records, including deceased,
+departed and archived animals. Preserve stable identity and structural relationships.
+Researchers should design as much of their dataset as possible through designated
+researcher administrators: labels, order, visibility, typed custom fields, allowed
+choices, requiredness and explicit uncertainty conventions.
 
-The university's rolling reporting window and the legal retention deadline are separate.
-Home Office ASPA guidance section 3.13.13 says source/use/disposal records for protected
-animals must remain for at least five years after final disposal; section 3.13.15 gives the
-same anchor for health records. Keep older records where that obligation or university
-policy requires them. The policy/trigger applicable to this project is still to be confirmed.
-[Home Office guidance](https://www.gov.uk/government/publications/the-operation-of-the-animals-scientific-procedures-act-1986/the-operation-of-the-animals-scientific-procedures-act-1986-aspa-accessible#31313-keeping-records)
+Starter sketch fields: Sex, Animal ID, Room, Cage, Line, Place of birth (PoB), Parents,
+Age, Notes, Date of birth and Date of death. Species, arrivals/departures and status
+support the register. Age derives from known dates and stops at death.
+Sex begins with Female, Male and Unknown; choices are configurable. Estimated dates,
+uncertain parentage and genetics conventions remain to be agreed/configured.
 
-The 2026 amendment sets out stock information including species/counts, origin, acquisition,
-source, supply/rehoming and recipients, release, research projects, deaths and known causes.
-Agree the mapping to this system with the university.
-[2026 Regulations, regulation 11(c)](https://www.legislation.gov.uk/uksi/2026/663/pdfs/uksi_20260663_en.pdf)
+Renaming, hiding or retiring a field must preserve old values and meaning. Retain field
+versions, types, labels and choices. Prototype types are chosen when a field is created;
+labels, visibility, order, requiredness and dropdown choices can then be adjusted. Existing
+values must remain valid; changing a type requires a new field in this iteration.
+Saved daily sets and research entries retain their captured field definitions.
 
-Engineering design required by the user's exact-history requirement:
-- Retain animal identity and every change to animal data, location, parent references,
-  birth/death/disposition, research-group membership and research notes.
-- Preserve field definitions, data types, dropdown choices and their versions. Renaming,
-  hiding or retiring a column must not destroy past values or their original meaning.
-- Record authenticated actor, before/after values, reason for a correction, effective
-  event date, server-recorded UTC timestamp, stable record/event IDs and sequence/version.
-- Corrections add new events; ordinary users cannot alter or delete earlier audit entries.
-  Everyone may edit current data through an authenticated write path that appends history.
-- Store current-state updates and their audit events atomically in shared server storage.
-  Detect conflicting edits. Protect retained events using separate audit/storage permissions
-  and independently preserved records for tamper detection.
-- Allow date-range queries for the rolling five years and reconstruction/export for any
-  retained day. Distinguish what was known then from later corrections to an event date.
-- Preserve an opening baseline and any older dependencies needed to reconstruct the window;
-  unchanged values and pedigree references must not vanish at the five-year boundary.
-- Keep records for living animals. Track final disposal/date/reason separately from death.
-  A cage move or cohort removal is not final disposal.
-- No automatic age-based purge. Archiving removes records from active views while preserving
-  their data/history. Any eventual disposal needs an approved institutional retention policy,
-  expiry calculation, longer-retention/hold checks and a recorded authorised action.
-- Provide retained exports for authorised inspection and investigation. Back up shared data,
-  history and field definitions with encryption, restricted access and verified restoration.
+## Research and history
 
-Acceptance evidence before operational use:
-1. Reconstruct complete animal and cohort state throughout a representative five-year dataset.
-2. Verify late/backdated corrections preserve both original and corrected histories.
-3. Verify renamed/hidden fields retain their historic values, types and meaning in exports.
-4. Verify data older than the rolling view survives whenever retention/dependencies require it.
-5. Verify ordinary editing cannot modify existing audit events or remove retained records.
-6. Demonstrate recovery of records/history from backup, including event ordering and attribution.
+- Daily users need complete readable daily tables. Researchers need individual, cohort,
+  group and lineage history with date-based access and relevant record operations.
+- Groups are changing research cohorts, with membership tracked over time.
+- Record dated research entries/observations for one animal or selected cohort members.
+  Preserve the animals concerned, author, recorded time and field definitions.
+- Lab-supplied examples: Behaviour, Surgery, Harvest, Swab sampling and Wing punch.
+  These are configurable starter categories, not an agreed measurement schema or
+  procedure instructions. Researchers define fields for what they collect.
+- Research categories do not automatically change stock. Births, deaths, arrivals and
+  departures are recorded through animal records.
+- Preserve cohort membership as known when a research entry was saved; later membership
+  changes must not rewrite previous entries. Provide date/animal/cohort/category filters.
+- Today's research entries can be revised with before/after history; past entries are final.
+- Retain individual activity, group membership and field definition history.
 
-## Next milestones
-1. Review workflows/columns and settle open decisions with this prototype.
-2. Agree university hosting, sign-in and membership.
-3. Build shared database, authenticated editing, concurrency and protected history meeting the five-year retention acceptance criteria.
-4. Implement validated spreadsheet import using anonymised representative records.
-5. Pilot and obtain institution-approved acceptance criteria.
+## Rooms, cages and pedigree
+
+A housed bat has a room; a cage is optional. Communal accommodation without cages is valid.
+Cages are identifiable containers with room locations and occupant lists. Find a bat,
+list all room occupants including uncaged bats, locate a cage and list its occupants.
+Support individual movements and moving an occupied cage with its current occupants
+consistently; preserve movement history. Identifier conventions and occupancy rules
+remain to be agreed.
+
+Track parent-child relationships, retain deceased/departed relatives and prevent cycles.
+Provide ancestor/descendant navigation and a selectable visual family tree. The prototype
+shows up to four ancestor generations and direct children, with navigation to relatives.
+Unknown parentage is explicit. Pedigree means parentage; lineage is a researcher-defined
+line/convention; a cohort has changing membership. Agree uncertainty and lineage conventions.
+
+## Roles, concurrency and bulk changes
+
+Proposed roles:
+- Student: a safer limited workflow. Read-only prototype access demonstrates restrictions;
+  actual entry/review permissions require agreement with the lab.
+- Researcher: edit current permitted animal records and record research entries.
+- Administrator: additionally configure fields, locations and authorised recovery.
+
+Administrator assignment, membership management and ownership remain undecided. Local role
+switching demonstrates permissions; it does not provide authentication or real access security.
+
+Prevent silent overwrites through version checks and visible stale-state errors. Preserve
+entered work for reconciliation. Commit related records and audit entries atomically,
+including cage moves. Coordinate snapshot requests so older captures cannot replace newer
+ones. Prototype same-origin tabs use Web Locks plus stale-data checks; this is not shared
+server concurrency. Conflicting forms remain open and can be copied before reloading.
+
+Show a review confirmation for extensive animal edits (five or more changed fields),
+membership changes, multiple definition changes, cage moves and recovery. A popup alone
+is not sufficient protection against data loss.
+
+## Database, CSV exports and secure storage
+
+Use a proper shared server database for operational data, relationships, configuration and
+history. SQL, provisionally PostgreSQL, is the proposed production starting point.
+CSV/Excel are export formats rather than the operational database.
+The user identifies CSV as the required legal export format; the institution must confirm
+exact contents, retention and inspection requirements before operational acceptance.
+
+Whenever a daily set is saved, retain readable stock.csv, births.csv and deaths.csv.
+CSV cannot contain sheets; use three named tables in a dated package. Use readable headings,
+stable order, clear dates and values. Archive all configured animal fields, including those
+hidden in the current display, so hiding a column cannot discard retained data. Preserve
+captured definitions/headers when fields later change. Excel export remains available.
+
+Same-day replacement updates the current CSV set and retains replacement history.
+Export/storage failures must be visible and retried. Do not claim files are stored until
+storage succeeds. Protect exports as carefully as the source database.
+
+Production needs authenticated access, encrypted connections, restricted storage permissions,
+protected history and encrypted independent backups. Monitor failed writes, exports,
+scheduled records and backups, with a named receiving-team contact.
+CSV copies supplement full backups; they cannot restore all relationships, configuration
+and history. The prototype stores CSV content in browser localStorage alongside its daily
+records and downloads a ZIP on request; it does not write protected university files.
+
+## Exact history, retention and recovery
+
+Retain an exact, traceable rolling five-year view of animal data and changes. This is a
+shared-system acceptance requirement, not a guarantee of browser storage.
+Preserve changes to housing, parentage, births/deaths/disposition, research, membership and
+field definitions. Record before/after values, actor, timestamp, effective date and stable
+identity/version. Current writes and history must commit together. Ordinary users must not
+modify previous audit entries or closed daily tables.
+
+Recovery previews a selected previous state and restores permitted current data through a
+traceable operation. Reverting animal data must append recovery history, preserving closed
+daily records. Full database disaster recovery is a separate backup/restore procedure.
+Prototype recovery restores animal values from a saved daily baseline, preserves newer custom
+field values where absent in that baseline, and archives later animals instead of deleting
+identities. It preserves research entries, groups, field definitions, daily reports and history;
+it is not a full database restore. Review dates/events after recovery before further recording.
+
+Preserve living animals and older pedigree/reconstruction dependencies. Distinguish departure
+or final disposition from death, cage movement and cohort removal. Archive without destroying
+data. No automatic purge at five years. Agree institutional retention, holds, expiry/disposal
+rules and responsible authorised owner. Verify full restoration, event ordering and attribution.
+
+References for institutional review, not a confirmed applicability assessment:
+[Home Office record guidance](https://www.gov.uk/government/publications/the-operation-of-the-animals-scientific-procedures-act-1986/the-operation-of-the-animals-scientific-procedures-act-1986-aspa-accessible#31313-keeping-records)
+and [2026 Regulations](https://www.legislation.gov.uk/uksi/2026/663/pdfs/uksi_20260663_en.pdf).
+The university must confirm applicable requirements and retention triggers.
+
+## Handover and production architecture
+
+Expect minimal continued cooperation after delivery. Include section help windows, field
+explanations, tooltips and actionable errors covering daily saves/locking, automatic labels,
+exports, housing, research, pedigree, configuration, roles and recovery. Supply user/admin
+and hosting/backup/restore/maintenance documentation. Assign a receiving-team owner.
+
+The proposed production structure is browser client, application server and PostgreSQL.
+TypeScript/React and Node.js are possible stack choices, not commitments. Shared writes,
+permissions, history, scheduling and exports belong on the server. After prototype success,
+confirm university hosting/database services, sign-in, protected storage, backups, monitoring,
+timezone and operational ownership before choosing the final stack.
+
+## Prototype limitations and operational acceptance
+
+The browser-local prototype does not supply institutional identity/security, protected
+five-year history, shared SQL storage, reliable unattended scheduling, university export
+storage, independent backups or full disaster recovery. JSON backup download is supported;
+full JSON restoration and validated spreadsheet import remain future work.
+
+Before operational use:
+1. Demonstrate a working day including births, deaths, arrivals, departures and movements;
+   verify table consistency, same-day replacement, day-end immutability and no event-date leakage.
+2. Verify manual/automatic labels, manual precedence, disabled scheduling and outage handling.
+3. Demonstrate concurrent edits/saves without silent overwrites or partially applied changes.
+4. Reconstruct representative five-year animal/group history, including retired fields,
+   departed animals and older pedigree dependencies.
+5. Verify real permissions and protection against altering/deleting retained history.
+6. Retrieve historical daily CSV tables and detect/recover export failures.
+7. Demonstrate controlled recovery and full backup restoration preserving identity,
+   configuration, history, daily sets and exports.
+8. Have a new team member complete workflows using embedded help and the receiving team
+   demonstrate recovery using the supplied handover instructions.
