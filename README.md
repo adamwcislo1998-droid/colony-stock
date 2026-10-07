@@ -21,6 +21,9 @@ Each custom field has editable values on the animal form. Exports follow visible
 ## Persistence and reporting
 Data is in localStorage per browser origin, not shared between users or localhost and the Site.
 The demo actor is not institutional identity. Browser history is not a permanent audit trail.
+The confirmed shared-system requirement is an exact rolling five-year history of all bat data.
+This prototype does not guarantee five-year retention. See the requirements brief for retention
+triggers, protected history, field-definition versions, archival rules and restoration checks.
 Saving fails visibly if storage is unavailable/full; stale tabs cannot overwrite newer data.
 Full stock shows what was saved by the selected UTC day. Birth/death reports use currently
 known event dates, including backdated corrections. Earlier unrecorded snapshots are unavailable.
