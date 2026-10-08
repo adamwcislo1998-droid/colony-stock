@@ -1,5 +1,6 @@
 import {today,age,initialState,validateAnimal,saveAnimal,asOf,filterAnimals,cell,exportRows,csv,defaultColumns,saveGroup,groupTimeline} from './core.mjs';
 import {workbook} from './xlsx.mjs';
+import {fieldTypes,configurable,choices,fieldValue,schemaErrors,saveColumns} from './fields.mjs';
 const $=s=>document.querySelector(s),esc=v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#39;");
 const key='st-andrews-colony-v1',pages=['overview','stock','housing','reports','groups','favourites','history','brief'];
 let raw=null,state,storageIssue='',page='overview',filter={status:'living'},tablePage=1,reportType='full',reportDate=today(),allDates=false,currentRows=[],editId=null,columnDraft=[],pendingFilter=null,toastTimer,selectedGroupId=null,editingGroupId=null;
@@ -23,6 +24,12 @@ const options=(items,selected='',first='')=>(first?'<option value="">'+esc(first
 function heading(title,subtitle,actions=''){return '<div class="page-heading"><div><div class="eyebrow">COLONY MANAGEMENT</div><h1>'+esc(title)+'</h1><p class="subtle">'+esc(subtitle)+'</p></div><div class="heading-actions">'+actions+'</div></div>';}
 const addButton='<button class="button primary" data-action="add">＋ Add animal</button>';
 const exportButtons='<button class="button secondary" data-action="xlsx">↓ Export Excel</button><button class="text-button" data-action="csv">CSV</button>';
+function fieldControl(c,value,attr){
+ const id='choices_'+c.key,attrs=attr+' aria-label="'+esc(c.label)+'"'+(c.required?' required':'');
+ if(c.type==='select'&&!c.allowNew)return '<select '+attrs+'>'+options(c.options||[],String(value??''),'Not specified')+'</select>';
+ if(c.type==='textarea'||c.key==='notes'&&c.type==='text')return '<textarea '+attrs+' rows="3">'+esc(value)+'</textarea>';
+ return '<input '+attrs+' type="'+(c.type==='select'?'text':c.type||'text')+'" value="'+esc(value)+'"'+(c.type==='number'?' step="any"'+(c.min!==''&&c.min!=null?' min="'+esc(c.min)+'"':'')+(c.max!==''&&c.max!=null?' max="'+esc(c.max)+'"':''):'')+(c.type==='select'?' list="'+id+'"':'')+'>'+(c.type==='select'?'<datalist id="'+id+'">'+options(c.options||[])+'</datalist>':'');
+}
 function tableCell(a,c,at){
  const editable=['stock','favourites'].includes(page)&&!['id','age'].includes(c.key);
  return '<td class="'+(c.key==='notes'?'note-cell ':'')+(editable?'editable-cell':'')+'" '+(editable?'tabindex="0" data-cell="'+esc(c.key)+'" data-animal="'+esc(a.id)+'" aria-label="Edit '+esc(c.label)+' for '+esc(a.id)+'"':'')+' title="'+esc(cell(a,c.key,at))+'">'+(c.key==='id'?'<button class="id-link" data-detail="'+esc(a.id)+'">'+esc(a.id)+'</button>':esc(cell(a,c.key,at))||'—')+'</td>';
@@ -41,9 +48,10 @@ function startCell(td){
  else if(c.key==='room')td.innerHTML=select('room',rooms(),a.room)+select('cage',state.locations.filter(x=>x.room===a.room).map(x=>x.cage),a.cage);
  else if(c.key==='cage')td.innerHTML=select('cage',state.locations.filter(x=>x.room===a.room).map(x=>x.cage),a.cage);
  else if(c.key==='sex')td.innerHTML=select('sex',['Female','Male','Unknown'],a.sex);
- else if(c.type==='select'&&c.custom)td.innerHTML=select(c.key,c.options,a.extra?.[c.key]||'','Select…');
+ else if(configurable(c))td.innerHTML=fieldControl(c,fieldValue(a,c),'data-value="'+c.key+'"');
  else if(c.key==='notes')td.innerHTML='<textarea data-value="notes" aria-label="Notes">'+esc(a.notes)+'</textarea>';
  else td.innerHTML=input(c.key,['dob','dod'].includes(c.key)?'date':c.custom?c.type:'text');
+ if(c.description)td.insertAdjacentHTML('beforeend','<small>'+esc(c.description)+'</small>');
  td.insertAdjacentHTML('beforeend','<span class="cell-error" role="alert"></span>');
  const first=td.querySelector('input,select,textarea');first.focus();if(first.type==='text'||first.tagName==='TEXTAREA')first.select();
 }
@@ -95,7 +103,7 @@ function overview(){
 function register(){
  const title=page==='favourites'?'Favourites':filter.groupId?(state.groups.find(g=>g.id===filter.groupId)?.name||'Group'):'Animal register';
  const rows=filterAnimals(state.animals,{...filter,favourites:page==='favourites'?state.favourites:null,group:filter.groupId?state.groups.find(g=>g.id===filter.groupId)?.animalIds:null});
- return heading(title,'Find animals by ID, room, cage, lineage or notes.','<button class="button secondary" data-action="columns">⚙ Columns</button>'+exportButtons+addButton)+'<section class="panel"><div class="toolbar"><div class="search-wrap"><span aria-hidden="true">⌕</span><input id="search" aria-label="Search animal register" placeholder="Search animals, locations or notes…" value="'+esc(filter.search||'')+'"></div><select data-filter="room" aria-label="Filter by room">'+options(rooms(),filter.room,'All rooms')+'</select><select data-filter="cage" aria-label="Filter by cage">'+options(state.locations.filter(x=>!filter.room||x.room===filter.room).map(x=>x.cage),filter.cage,'All cages')+'</select><select data-filter="sex" aria-label="Filter by sex">'+options(['Female','Male','Unknown'],filter.sex,'All sexes')+'</select><select data-filter="line" aria-label="Filter by line">'+options([...new Set(state.animals.map(a=>a.line).filter(Boolean))],filter.line,'All lines')+'</select><select data-filter="status" aria-label="Filter by status"><option value="living"'+(filter.status==='living'?' selected':'')+'>Living</option><option value="deceased"'+(filter.status==='deceased'?' selected':'')+'>Deceased</option><option value="all"'+(filter.status==='all'?' selected':'')+'>All records</option></select><button class="text-button" data-action="clear">Clear filters</button></div><p class="grid-hint">Click a cell to edit · Tab moves across · Enter saves and moves down · Escape cancels. IDs and ages are read-only.</p><div id="register-table">'+table(rows)+'</div></section>';
+ return heading(title,'Find animals by ID, room, cage, lineage or notes.','<button class="button secondary" data-action="columns">⚙ Fields & columns</button>'+exportButtons+addButton)+'<section class="panel"><div class="toolbar"><div class="search-wrap"><span aria-hidden="true">⌕</span><input id="search" aria-label="Search animal register" placeholder="Search animals, locations or notes…" value="'+esc(filter.search||'')+'"></div><select data-filter="room" aria-label="Filter by room">'+options(rooms(),filter.room,'All rooms')+'</select><select data-filter="cage" aria-label="Filter by cage">'+options(state.locations.filter(x=>!filter.room||x.room===filter.room).map(x=>x.cage),filter.cage,'All cages')+'</select><select data-filter="sex" aria-label="Filter by sex">'+options(['Female','Male','Unknown'],filter.sex,'All sexes')+'</select><select data-filter="line" aria-label="Filter by line">'+options([...new Set(state.animals.map(a=>a.line).filter(Boolean))],filter.line,'All lines')+'</select><select data-filter="status" aria-label="Filter by status"><option value="living"'+(filter.status==='living'?' selected':'')+'>Living</option><option value="deceased"'+(filter.status==='deceased'?' selected':'')+'>Deceased</option><option value="all"'+(filter.status==='all'?' selected':'')+'>All records</option></select><button class="text-button" data-action="clear">Clear filters</button></div><p class="grid-hint">Click a cell to edit · Tab moves across · Enter saves and moves down · Escape cancels. IDs and ages are read-only.</p><div id="register-table">'+table(rows)+'</div></section>';
 }
 function housing(){
  const living=state.animals.filter(a=>!a.dod);
@@ -126,7 +134,7 @@ function historyItem(e){
  let changes=[];
  if(e.before&&e.after){for(const k of Object.keys(labels))if(e.before[k]!==e.after[k])changes.push(labels[k]+': '+(e.before[k]||'—')+' → '+(e.after[k]||'—'));for(const f of state.columns.filter(x=>x.custom))if((e.before.extra?.[f.key]||'')!==(e.after.extra?.[f.key]||''))changes.push(f.label+': '+(e.before.extra?.[f.key]||'—')+' → '+(e.after.extra?.[f.key]||'—'));}
  else if(e.groupAfter){const before=e.groupBefore?.animalIds||[],after=e.groupAfter.animalIds;changes=['Group: '+e.groupAfter.name];const added=after.filter(id=>!before.includes(id)),removed=before.filter(id=>!after.includes(id));if(added.length)changes.push('Members added: '+added.join(', '));if(removed.length)changes.push('Members removed: '+removed.join(', '));if(e.groupBefore?.notes!==e.groupAfter.notes)changes.push('Research notes: '+(e.groupAfter.notes||'—'));}
- else changes=[e.action==='Demo baseline'?'Initial synthetic records.':e.action==='Columns updated'?'Column layout or field definitions changed.':'A new record was added.'];
+ else changes=[e.action==='Demo baseline'?'Initial synthetic records.':e.action==='Columns updated'?'Field settings changed: '+(e.columnsAfter||[]).filter(c=>JSON.stringify(c)!==JSON.stringify(e.columnsBefore?.find(b=>b.key===c.key))).map(c=>c.label).join(', '):'A new record was added.'];
  return '<div class="history-row"><div class="history-time">'+esc(e.at.slice(0,10))+'<span>'+esc(e.at.slice(11,16))+' UTC · '+esc(e.actor)+'</span></div><div><div class="history-title">'+esc(e.action)+(e.animalId?' · '+esc(e.animalId):'')+'</div><div class="history-changes">'+esc(changes.length?changes.join('\n'):'No data values changed.')+'</div></div></div>';
 }
 function history(){return heading('Record history','Before-and-after values for animal edits, with the time they were saved.')+'<div class="callout">The shared system must preserve a rolling five-year history of all bat data and changes. This browser-local demo does not guarantee that retention; protected shared storage and authenticated users are still required.</div><section class="panel">'+[...state.events].reverse().map(historyItem).join('')+'</section>';}
@@ -155,7 +163,8 @@ function openRecord(id=null){
  for(const k of ['id','species','sex','line','room','cage','dob','dod','mother','father','pob','notes'])f.elements[k].value=a?.[k]??(k==='sex'?'Unknown':k==='species'?'Bat':k==='room'?rooms()[0]:k==='cage'?state.locations[0].cage:'');
  f.elements.dob.max=today();f.elements.dod.max=today();
  $('#parent-ids').innerHTML=state.animals.filter(x=>x.id!==id).map(x=>'<option value="'+esc(x.id)+'"></option>').join('');
- $('#custom-inputs').innerHTML=state.columns.filter(x=>x.custom).map(x=>'<label>'+esc(x.label)+(x.type==='select'?'<select name="'+x.key+'">'+options(x.options,a?.extra?.[x.key],'Not specified')+'</select>':'<input name="'+x.key+'" type="'+(x.type==='text'?'text':x.type)+'"'+(x.type==='number'?' step="any"':' maxlength="1000"')+' value="'+esc(a?.extra?.[x.key]??'')+'">')+'</label>').join('');
+ $('#custom-inputs').innerHTML=state.columns.filter(x=>x.custom).map(c=>'<label>'+esc(c.label)+(c.required?' *':'')+fieldControl(c,a?fieldValue(a,c):c.defaultValue||'','name="'+c.key+'"')+'<small>'+esc(c.description||'')+'</small></label>').join('');
+ for(const c of state.columns.filter(c=>configurable(c)&&!c.custom)){const el=$('#record-form').elements[c.key];el.outerHTML=fieldControl(c,a?fieldValue(a,c):c.defaultValue||el.value,'name="'+c.key+'"');}
  $('#record-dialog').showModal();
 }
 function detail(id){
@@ -175,7 +184,11 @@ function exportFile(format){
  notify('Exported '+currentRows.length+' records in your column order.');
 }
 function renderColumns(){
- $('#column-list').innerHTML=columnDraft.map((c,i)=>'<div class="column-row"><input type="checkbox" data-visible="'+i+'" aria-label="Show '+esc(c.label)+'"'+(c.visible?' checked':'')+'><input type="text" data-label="'+i+'" aria-label="Heading for '+esc(c.label)+'" maxlength="60" value="'+esc(c.label)+'"><small>'+esc(c.custom?c.type:'standard')+'</small><button data-move="'+i+'" data-direction="-1" aria-label="Move '+esc(c.label)+' up"'+(i===0?' disabled':'')+'>↑</button><button data-move="'+i+'" data-direction="1" aria-label="Move '+esc(c.label)+' down"'+(i===columnDraft.length-1?' disabled':'')+'>↓</button></div>').join('');
+ $('#column-list').innerHTML=columnDraft.map((c,i)=>'<div class="field-card"><div class="column-row"><input type="checkbox" data-visible="'+i+'" aria-label="Show '+esc(c.label)+'"'+(c.visible?' checked':'')+'><input type="text" data-label="'+i+'" aria-label="Heading for '+esc(c.label)+'" maxlength="60" value="'+esc(c.label)+'"><button data-move="'+i+'" data-direction="-1" aria-label="Move '+esc(c.label)+' up"'+(i===0?' disabled':'')+'>↑</button><button data-move="'+i+'" data-direction="1" aria-label="Move '+esc(c.label)+' down"'+(i===columnDraft.length-1?' disabled':'')+'>↓</button></div>'+(configurable(c)?'<details><summary>Value settings · '+esc(fieldTypes.find(([t])=>t===c.type)?.[1]||c.type)+'</summary><div class="form-grid">'+fieldSettings(c,i)+'</div></details>':'<small class="subtle">'+(['id','age'].includes(c.key)?'Identity or calculated value':'Uses colony rules for locations, sex, dates or parent records')+'</small>')+'</div>').join('');
+}
+function fieldSettings(c,i){
+ const setting=(k)=>'data-setting="'+k+'" data-index="'+i+'"';
+ return '<label>Value type<select '+setting('type')+'>'+fieldTypes.map(([k,label])=>'<option value="'+k+'"'+(c.type===k?' selected':'')+'>'+label+'</option>').join('')+'</select></label><label>Default for new animals<input '+setting('defaultValue')+' value="'+esc(c.defaultValue||'')+'"></label><label class="check-label"><input type="checkbox" '+setting('required')+(c.required?' checked':'')+'> Value required</label><label>Description / guidance<input '+setting('description')+' value="'+esc(c.description||'')+'"></label>'+(c.type==='select'?'<label class="full">Choices (one per line)<textarea '+setting('options')+' rows="4">'+esc((c.options||[]).join('\n'))+'</textarea><button type="button" class="text-button" data-values="'+i+'">Add choices from existing values</button></label><label class="check-label full"><input type="checkbox" '+setting('allowNew')+(c.allowNew?' checked':'')+'> Allow typing new choices · new values join the list when saved</label>':'')+(c.type==='number'?'<label>Minimum (optional)<input type="number" step="any" '+setting('min')+' value="'+esc(c.min??'')+'"></label><label>Maximum (optional)<input type="number" step="any" '+setting('max')+' value="'+esc(c.max??'')+'"></label>':'');
 }
 function openColumns(){columnDraft=structuredClone(state.columns);$('#field-form').reset();$('#field-error').textContent='';renderColumns();$('#columns-dialog').showModal();}
 document.addEventListener('click',e=>{
@@ -199,18 +212,21 @@ document.addEventListener('click',e=>{
  if(b.dataset.group)go('stock',{status:'all',groupId:b.dataset.group});
  if(b.dataset.pagination){tablePage+=Number(b.dataset.pagination);render();}
  if(b.dataset.report){reportType=b.dataset.report;tablePage=1;render();}
+ if(b.dataset.values!==undefined){const i=Number(b.dataset.values),c=columnDraft[i];c.options=[...new Set([...(c.options||[]),...state.animals.map(a=>String(fieldValue(a,c))).filter(Boolean)])];renderColumns();$('#column-list').children[i].querySelector('details').open=true;}
  if(b.dataset.move){const i=Number(b.dataset.move),j=i+Number(b.dataset.direction);[columnDraft[i],columnDraft[j]]=[columnDraft[j],columnDraft[i]];renderColumns();}
 });
 document.addEventListener('input',e=>{
  const el=e.target;
  if(el.id==='search'){filter.search=el.value;tablePage=1;$('#register-table').innerHTML=table(filterAnimals(state.animals,{...filter,favourites:page==='favourites'?state.favourites:null,group:filter.groupId?state.groups.find(g=>g.id===filter.groupId)?.animalIds:null}));}
  if(el.dataset.label!==undefined)columnDraft[Number(el.dataset.label)].label=el.value;
+ if(el.dataset.setting){const c=columnDraft[Number(el.dataset.index)],k=el.dataset.setting;c[k]=el.type==='checkbox'?el.checked:k==='options'?choices(el.value):el.value;}
 });
 document.addEventListener('change',e=>{
  const el=e.target;
  if(el.dataset.filter){filter[el.dataset.filter]=el.value;if(el.dataset.filter==='room')filter.cage='';tablePage=1;render();}
  if(el.id==='report-date'){if(!el.value||el.value>today()){notify('Choose a valid date up to today.');return;}reportDate=el.value;tablePage=1;render();}
  if(el.id==='all-dates'){allDates=el.checked;tablePage=1;render();}
+ if(el.dataset.setting==='type'){const i=Number(el.dataset.index);renderColumns();$('#column-list').children[i].querySelector('details').open=true;}
  if(el.dataset.visible!==undefined)columnDraft[Number(el.dataset.visible)].visible=el.checked;
 });
 $('#record-form').elements.room.addEventListener('change',e=>cages(e.target.value));
@@ -229,13 +245,14 @@ $('#group-form').addEventListener('submit',e=>{
  if(commit(saveGroup(state,group,'Demo researcher'))){selectedGroupId=group.id;$('#group-dialog').close();render();notify('Research group saved with membership history.');}
 });
 $('#field-form').addEventListener('submit',e=>{
- e.preventDefault();const f=e.target,label=f.elements.label.value.trim(),type=f.elements.type.value,opts=[...new Set(f.elements.options.value.split(',').map(x=>x.trim()).filter(Boolean))];
- if(!label||columnDraft.some(c=>c.label.toLowerCase()===label.toLowerCase())||(type==='select'&&!opts.length)){$('#field-error').textContent='Use a unique heading and supply choices for a dropdown.';return;}
- columnDraft.push({key:'custom_'+crypto.randomUUID().replaceAll('-',''),label,type,options:opts,custom:true,visible:true});f.reset();$('#field-error').textContent='';renderColumns();
+ e.preventDefault();const f=e.target,label=f.elements.label.value.trim(),type=f.elements.type.value,opts=[...new Set(choices(f.elements.options.value))];
+ if(!label||columnDraft.some(c=>c.label.toLowerCase()===label.toLowerCase())||(type==='select'&&!opts.length&&!f.elements.allowNew.checked)){$('#field-error').textContent='Use a unique heading and supply choices for a dropdown.';return;}
+ columnDraft.push({key:'custom_'+crypto.randomUUID().replaceAll('-',''),label,type,options:opts,allowNew:f.elements.allowNew.checked,custom:true,visible:true});f.reset();$('#field-error').textContent='';renderColumns();
 });
 $('#save-columns').addEventListener('click',()=>{
- if(!columnDraft.some(c=>c.visible)||columnDraft.some(c=>!c.label.trim())||new Set(columnDraft.map(c=>c.label.trim().toLowerCase())).size!==columnDraft.length){$('#field-error').textContent='Keep at least one visible column and use non-empty, unique headings.';return;}
- if(mutate(n=>{n.columns=columnDraft.map(c=>({...c,label:c.label.trim()}));n.events.push({id:crypto.randomUUID(),at:new Date().toISOString(),actor:'Demo researcher',action:'Columns updated',animalId:'',before:null,after:null,snapshot:structuredClone(n.animals)});})){ $('#columns-dialog').close();render();notify('Column layout saved. The register and exports now use this layout.');}
+ const errors=schemaErrors(columnDraft,state.animals);if(errors.length){$('#field-error').textContent=errors.join(' ');return;}
+ const columns=columnDraft.map(c=>({...c,label:c.label.trim()}));
+ if(commit(saveColumns(state,columns,'Demo researcher'))){$('#columns-dialog').close();render();notify('Fields and value rules saved.');}
 });
 $('#backup').addEventListener('click',()=>download(JSON.stringify(state,null,2),'colony-demo-backup-'+today()+'.json','application/json'));
 window.addEventListener('storage',e=>{if(e.key===key)notify('Data changed in another tab. Reload to use its latest saved state.');});

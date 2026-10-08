@@ -1,3 +1,4 @@
+import {configurable,fieldValue,fieldErrors} from './fields.mjs';
 export const columns = [
  ['sex','Sex'],['id','Animal ID'],['room','Room'],['cage','Cage'],['line','Line'],['pob','PoB'],
  ['parents','Parents'],['age','Age'],['notes','Notes'],['dob','Date of birth'],['dod','Date of death']
@@ -31,12 +32,7 @@ export function validateAnimal(a,animals,locations,originalId=null,at=today(),sc
  if(cycle(a.id))errors.push('Parent references cannot create a family-tree cycle.');
  if(a.mother&&a.mother===a.father)errors.push('The two parent references must be different.');
  for(const id of [a.mother,a.father].filter(Boolean)){const p=graph.get(id);if(!p)errors.push('Parent '+id+' is not in the register.');else if(p.dob&&a.dob&&p.dob>a.dob)errors.push('A parent cannot be born after this animal.');}
- for(const f of schema.filter(x=>x.custom)){
-  const v=a.extra?.[f.key];if(v===''||v==null)continue;
-  if(f.type==='number'&&!Number.isFinite(Number(v)))errors.push(f.label+' must be a number.');
-  if(f.type==='date'&&!validDate(v))errors.push(f.label+' must be a valid date.');
-  if(f.type==='select'&&!f.options.includes(v))errors.push('Choose a valid value for '+f.label+'.');
- }
+ for(const f of schema.filter(configurable))errors.push(...fieldErrors(fieldValue(a,f),f));
  for(const child of graph.values())for(const id of [child.mother,child.father].filter(Boolean)){const p=graph.get(id);if(p?.dob&&child.dob&&p.dob>child.dob)errors.push('A parent cannot be born after offspring '+child.id+'.');}
  return [...new Set(errors)];
 }
@@ -57,6 +53,7 @@ export function initialState(at=new Date().toISOString().slice(0,10)){
 export function saveAnimal(state,a,actor,at=new Date().toISOString(),originalId=null){
  const before=originalId?state.animals.find(x=>x.id===originalId):null;if(originalId&&!before)throw new Error('This record no longer exists.');
  const next=structuredClone(state);next.animals=before?next.animals.map(x=>x.id===originalId?structuredClone(a):x):[...next.animals,structuredClone(a)];
+ for(const c of next.columns.filter(configurable)){const v=String(fieldValue(a,c)).trim();if(c.type==='select'&&c.allowNew&&v&&!c.options?.includes(v))c.options=[...(c.options||[]),v];}
  const action=!before?'Animal added':!before.dod&&a.dod?'Death recorded':before.dod&&!a.dod?'Death corrected':'Record updated';
  next.events.push({id:crypto.randomUUID(),at,actor,action,animalId:a.id,before:before?structuredClone(before):null,after:structuredClone(a),snapshot:structuredClone(next.animals)});return next;
 }
