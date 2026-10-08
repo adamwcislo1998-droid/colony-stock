@@ -23,12 +23,69 @@ const options=(items,selected='',first='')=>(first?'<option value="">'+esc(first
 function heading(title,subtitle,actions=''){return '<div class="page-heading"><div><div class="eyebrow">COLONY MANAGEMENT</div><h1>'+esc(title)+'</h1><p class="subtle">'+esc(subtitle)+'</p></div><div class="heading-actions">'+actions+'</div></div>';}
 const addButton='<button class="button primary" data-action="add">＋ Add animal</button>';
 const exportButtons='<button class="button secondary" data-action="xlsx">↓ Export Excel</button><button class="text-button" data-action="csv">CSV</button>';
+function tableCell(a,c,at){
+ const editable=['stock','favourites'].includes(page)&&!['id','age'].includes(c.key);
+ return '<td class="'+(c.key==='notes'?'note-cell ':'')+(editable?'editable-cell':'')+'" '+(editable?'tabindex="0" data-cell="'+esc(c.key)+'" data-animal="'+esc(a.id)+'" aria-label="Edit '+esc(c.label)+' for '+esc(a.id)+'"':'')+' title="'+esc(cell(a,c.key,at))+'">'+(c.key==='id'?'<button class="id-link" data-detail="'+esc(a.id)+'">'+esc(a.id)+'</button>':esc(cell(a,c.key,at))||'—')+'</td>';
+}
+let activeCell=null;
+function startCell(td){
+ if(activeCell?.td===td)return;
+ if(activeCell&&!finishCell())return;
+ if(!td.isConnected)return;
+ const a=state.animals.find(a=>a.id===td.dataset.animal),c=state.columns.find(c=>c.key===td.dataset.cell);
+ if(!a||!c)return;
+ const input=(key,type='text')=>'<input data-value="'+key+'" aria-label="'+esc(key==='mother'?'Parent 1':key==='father'?'Parent 2':c.label)+'" type="'+type+'" value="'+esc(c.custom?a.extra?.[key]:a[key])+'"'+(['dob','dod'].includes(key)?' max="'+today()+'"':'')+'>';
+ const select=(key,items,value,empty='')=>'<select data-value="'+key+'" aria-label="'+esc(key==='room'?'Room':key==='cage'?'Cage':c.label)+'">'+options(items,value,empty)+'</select>';
+ activeCell={td,a,c,html:td.innerHTML};td.classList.add('editing');
+ if(c.key==='parents')td.innerHTML=input('mother')+input('father');
+ else if(c.key==='room')td.innerHTML=select('room',rooms(),a.room)+select('cage',state.locations.filter(x=>x.room===a.room).map(x=>x.cage),a.cage);
+ else if(c.key==='cage')td.innerHTML=select('cage',state.locations.filter(x=>x.room===a.room).map(x=>x.cage),a.cage);
+ else if(c.key==='sex')td.innerHTML=select('sex',['Female','Male','Unknown'],a.sex);
+ else if(c.type==='select'&&c.custom)td.innerHTML=select(c.key,c.options,a.extra?.[c.key]||'','Select…');
+ else if(c.key==='notes')td.innerHTML='<textarea data-value="notes" aria-label="Notes">'+esc(a.notes)+'</textarea>';
+ else td.innerHTML=input(c.key,['dob','dod'].includes(c.key)?'date':c.custom?c.type:'text');
+ td.insertAdjacentHTML('beforeend','<span class="cell-error" role="alert"></span>');
+ const first=td.querySelector('input,select,textarea');first.focus();if(first.type==='text'||first.tagName==='TEXTAREA')first.select();
+}
+function finishCell(cancel=false){
+ if(!activeCell)return true;
+ const {td,a,c,html}=activeCell,next=structuredClone(a);next.extra||={};
+ if(!cancel){
+  for(const el of td.querySelectorAll('[data-value]')){const k=el.dataset.value;if(c.custom)next.extra[k]=el.value.trim();else next[k]=el.value.trim();}
+  const errors=validateAnimal(next,state.animals,state.locations,a.id,today(),state.columns);
+  if(errors.length){td.querySelector('.cell-error').textContent=errors.join(' ');td.querySelector('input,select,textarea').focus();return false;}
+  if(JSON.stringify(a)!==JSON.stringify(next)&&!commit(saveAnimal(state,next,'Demo researcher',new Date().toISOString(),a.id))){td.querySelector('.cell-error').textContent='Unable to save. Your edit is still here; retry or press Escape.';return false;}
+ }
+ activeCell=null;td.classList.remove('editing');td.innerHTML=cancel?html:esc(cell(next,c.key))||'—';
+ if(!cancel){const sx=$('.table-wrap')?.scrollLeft||0;render();if($('.table-wrap'))$('.table-wrap').scrollLeft=sx;}
+ return true;
+}
+document.addEventListener('click',e=>{const td=e.target.closest('[data-cell]');if(td)startCell(td);});
+document.addEventListener('pointerdown',e=>{if(activeCell&&!activeCell.td.contains(e.target)){const target=e.target.closest('[data-cell]'),dest=target?{id:target.dataset.animal,key:target.dataset.cell}:null;if(!finishCell()){e.preventDefault();e.stopImmediatePropagation();}else if(dest){e.preventDefault();const next=[...document.querySelectorAll('[data-cell]')].find(x=>x.dataset.animal===dest.id&&x.dataset.cell===dest.key);if(next)startCell(next);}}},true);
+document.addEventListener('focusout',()=>{setTimeout(()=>{if(activeCell&&!activeCell.td.contains(document.activeElement))finishCell();},0);});
+document.addEventListener('change',e=>{
+ if(activeCell&&e.target.dataset.value==='room'){
+  const cage=activeCell.td.querySelector('[data-value="cage"]'),items=state.locations.filter(x=>x.room===e.target.value).map(x=>x.cage);
+  cage.innerHTML=options(items,items.includes(cage.value)?cage.value:items[0]);
+ }
+});
+document.addEventListener('keydown',e=>{
+ const td=e.target.closest('[data-cell]');if(!td)return;
+ if(!activeCell){if(['Enter','F2'].includes(e.key)){e.preventDefault();startCell(td);}return;}
+ if(e.key==='Escape'){e.preventDefault();finishCell(true);td.focus();return;}
+ if(e.key!=='Tab'&&!(e.key==='Enter'&&!e.shiftKey))return;
+ const controls=[...td.querySelectorAll('[data-value]')],i=controls.indexOf(e.target);
+ if(e.key==='Tab'&&((!e.shiftKey&&i<controls.length-1)||(e.shiftKey&&i>0)))return;
+ e.preventDefault();const cells=[...document.querySelectorAll('[data-cell]')],index=cells.indexOf(td),target=e.key==='Tab'?cells[index+(e.shiftKey?-1:1)]:cells.slice(index+1).find(x=>x.dataset.cell===td.dataset.cell);
+ const dest=target?{id:target.dataset.animal,key:target.dataset.cell}:null;
+ if(finishCell()){const next=[...document.querySelectorAll('[data-cell]')].find(x=>x.dataset.animal===(dest?.id||td.dataset.animal)&&x.dataset.cell===(dest?.key||td.dataset.cell));if(next){next.focus();if(dest)startCell(next);}}
+});
 function table(rows,at=today()){
  currentRows=rows;const c=state.columns.filter(x=>x.visible),max=Math.max(1,Math.ceil(rows.length/25));tablePage=Math.min(tablePage,max);
  if(!c.length)return '<div class="empty">Configure at least one visible column.</div>';
  if(!rows.length)return '<div class="empty"><strong>No matching records</strong>Change the filters, select another date or add an animal.</div>';
  const chunk=rows.slice((tablePage-1)*25,tablePage*25);
- return '<div class="table-wrap"><table><thead><tr><th aria-label="Favourite"></th>'+c.map(x=>'<th scope="col">'+esc(x.label)+'</th>').join('')+'<th scope="col">Status</th><th scope="col">Record</th></tr></thead><tbody>'+chunk.map(a=>'<tr><td><button class="star '+(state.favourites.includes(a.id)?'saved':'')+'" data-star="'+esc(a.id)+'" aria-label="'+(state.favourites.includes(a.id)?'Remove':'Add')+' favourite '+esc(a.id)+'" aria-pressed="'+state.favourites.includes(a.id)+'">'+(state.favourites.includes(a.id)?'★':'☆')+'</button></td>'+c.map(x=>'<td class="'+(x.key==='notes'?'note-cell':'')+'" title="'+esc(cell(a,x.key,at))+'">'+(x.key==='id'?'<button class="id-link" data-detail="'+esc(a.id)+'">'+esc(a.id)+'</button>':esc(cell(a,x.key,at))||'—')+'</td>').join('')+'<td><span class="tag '+(a.dod?'deceased':'')+'">'+(a.dod?'Deceased':'Living')+'</span></td><td><button class="text-button" data-detail="'+esc(a.id)+'">Details ↗</button></td></tr>').join('')+'</tbody></table></div><div class="table-foot"><span>'+rows.length+' matching record'+(rows.length!==1?'s':'')+' · exports include all matching rows</span><div class="pagination"><button data-pagination="-1"'+(tablePage===1?' disabled':'')+'>Previous</button><span>'+tablePage+' / '+max+'</span><button data-pagination="1"'+(tablePage===max?' disabled':'')+'>Next</button></div></div>';
+ return '<div class="table-wrap"><table><thead><tr><th aria-label="Favourite"></th>'+c.map(x=>'<th scope="col">'+esc(x.label)+'</th>').join('')+'<th scope="col">Status</th><th scope="col">Record</th></tr></thead><tbody>'+chunk.map(a=>'<tr><td><button class="star '+(state.favourites.includes(a.id)?'saved':'')+'" data-star="'+esc(a.id)+'" aria-label="'+(state.favourites.includes(a.id)?'Remove':'Add')+' favourite '+esc(a.id)+'" aria-pressed="'+state.favourites.includes(a.id)+'">'+(state.favourites.includes(a.id)?'★':'☆')+'</button></td>'+c.map(x=>tableCell(a,x,at)).join('')+'<td><span class="tag '+(a.dod?'deceased':'')+'">'+(a.dod?'Deceased':'Living')+'</span></td><td><button class="text-button" data-detail="'+esc(a.id)+'">Details ↗</button></td></tr>').join('')+'</tbody></table></div><div class="table-foot"><span>'+rows.length+' matching record'+(rows.length!==1?'s':'')+' · exports include all matching rows</span><div class="pagination"><button data-pagination="-1"'+(tablePage===1?' disabled':'')+'>Previous</button><span>'+tablePage+' / '+max+'</span><button data-pagination="1"'+(tablePage===max?' disabled':'')+'>Next</button></div></div>';
 }
 function overview(){
  const living=state.animals.filter(a=>!a.dod),d=today(),week=new Date(d+'T12:00:00Z');week.setUTCDate(week.getUTCDate()-6);const start=week.toISOString().slice(0,10);
@@ -38,7 +95,7 @@ function overview(){
 function register(){
  const title=page==='favourites'?'Favourites':filter.groupId?(state.groups.find(g=>g.id===filter.groupId)?.name||'Group'):'Animal register';
  const rows=filterAnimals(state.animals,{...filter,favourites:page==='favourites'?state.favourites:null,group:filter.groupId?state.groups.find(g=>g.id===filter.groupId)?.animalIds:null});
- return heading(title,'Find animals by ID, room, cage, lineage or notes.','<button class="button secondary" data-action="columns">⚙ Columns</button>'+exportButtons+addButton)+'<section class="panel"><div class="toolbar"><div class="search-wrap"><span aria-hidden="true">⌕</span><input id="search" aria-label="Search animal register" placeholder="Search animals, locations or notes…" value="'+esc(filter.search||'')+'"></div><select data-filter="room" aria-label="Filter by room">'+options(rooms(),filter.room,'All rooms')+'</select><select data-filter="cage" aria-label="Filter by cage">'+options(state.locations.filter(x=>!filter.room||x.room===filter.room).map(x=>x.cage),filter.cage,'All cages')+'</select><select data-filter="sex" aria-label="Filter by sex">'+options(['Female','Male','Unknown'],filter.sex,'All sexes')+'</select><select data-filter="line" aria-label="Filter by line">'+options([...new Set(state.animals.map(a=>a.line).filter(Boolean))],filter.line,'All lines')+'</select><select data-filter="status" aria-label="Filter by status"><option value="living"'+(filter.status==='living'?' selected':'')+'>Living</option><option value="deceased"'+(filter.status==='deceased'?' selected':'')+'>Deceased</option><option value="all"'+(filter.status==='all'?' selected':'')+'>All records</option></select><button class="text-button" data-action="clear">Clear filters</button></div><div id="register-table">'+table(rows)+'</div></section>';
+ return heading(title,'Find animals by ID, room, cage, lineage or notes.','<button class="button secondary" data-action="columns">⚙ Columns</button>'+exportButtons+addButton)+'<section class="panel"><div class="toolbar"><div class="search-wrap"><span aria-hidden="true">⌕</span><input id="search" aria-label="Search animal register" placeholder="Search animals, locations or notes…" value="'+esc(filter.search||'')+'"></div><select data-filter="room" aria-label="Filter by room">'+options(rooms(),filter.room,'All rooms')+'</select><select data-filter="cage" aria-label="Filter by cage">'+options(state.locations.filter(x=>!filter.room||x.room===filter.room).map(x=>x.cage),filter.cage,'All cages')+'</select><select data-filter="sex" aria-label="Filter by sex">'+options(['Female','Male','Unknown'],filter.sex,'All sexes')+'</select><select data-filter="line" aria-label="Filter by line">'+options([...new Set(state.animals.map(a=>a.line).filter(Boolean))],filter.line,'All lines')+'</select><select data-filter="status" aria-label="Filter by status"><option value="living"'+(filter.status==='living'?' selected':'')+'>Living</option><option value="deceased"'+(filter.status==='deceased'?' selected':'')+'>Deceased</option><option value="all"'+(filter.status==='all'?' selected':'')+'>All records</option></select><button class="text-button" data-action="clear">Clear filters</button></div><p class="grid-hint">Click a cell to edit · Tab moves across · Enter saves and moves down · Escape cancels. IDs and ages are read-only.</p><div id="register-table">'+table(rows)+'</div></section>';
 }
 function housing(){
  const living=state.animals.filter(a=>!a.dod);
