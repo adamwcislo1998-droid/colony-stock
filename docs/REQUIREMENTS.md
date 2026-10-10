@@ -69,6 +69,15 @@ labels, visibility, order, requiredness and dropdown choices can then be adjuste
 values must remain valid; changing a type requires a new field in this iteration.
 Saved daily sets and research entries retain their captured field definitions.
 
+## Review and navigation
+
+- Today’s working lists update immediately after saving an animal, including newly recorded deaths. Show live working data separately from the last saved daily set.
+- A recorded death excludes the animal from living stock on its death date and all later dates; preserve its record, pedigree and earlier captures.
+- Use readable text, contrast and clearly separated sections. Provide a compact register view and direct Open/Edit actions.
+- Animal IDs in the changes log must open the related animal record, including research and cohort events.
+- History needs keyword, animal, activity, user and inclusive date filters; newest/oldest sorting; pagination; and readable before/after comparisons.
+- The animal record must expose a clear View family tree action, generated from its recorded parent links.
+
 ## Research and history
 
 - Daily users need complete readable daily tables. Researchers need individual, cohort,
@@ -94,6 +103,11 @@ list all room occupants including uncaged bats, locate a cage and list its occup
 Support individual movements and moving an occupied cage with its current occupants
 consistently; preserve movement history. Identifier conventions and occupancy rules
 remain to be agreed.
+
+Administrators can remove empty cages and rooms after reviewing the action. A room's
+empty cages are removed with it; removing its last cage leaves the room available for
+communal accommodation. Occupied locations cannot be removed. Retain animal references,
+saved reports and historical location values, and record the removal in the changes log.
 
 Track parent-child relationships, retain deceased/departed relatives and prevent cycles.
 Provide ancestor/descendant navigation and a selectable visual family tree. The prototype

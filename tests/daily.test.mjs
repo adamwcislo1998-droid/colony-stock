@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {initialState,saveAnimal} from '../dist/core.mjs';
-import {dailyTables,saveDaily,automaticDaily,utcDay} from '../dist/daily.mjs';
+import {dailyTables,dailyReportView,saveDaily,automaticDaily,utcDay} from '../dist/daily.mjs';
 const date='2026-10-07',stamp=date+'T12:00:00Z',seed=()=>({...initialState(date),dailyRecords:[],automaticStarted:date,settings:{autoDaily:true}});
 test('daily tables isolate effective-date events and present stock',()=>{
  const s=seed(),a=s.animals[0],tables=dailyTables([...s.animals,{...a,id:'arrival',arrived:date},{...a,id:'departure',departed:date},{...a,id:'archived',archived:true}],date);
@@ -41,3 +41,43 @@ test('automatic capture reconstructs field definitions from before next-day conf
  const n=automaticDaily(s,'2026-10-08T00:05:00Z');assert.equal(n.dailyRecords[0].columns[0].label,before[0].label);
 });
 test('UTC reporting day handles local offset at midnight',()=>{assert.equal(utcDay('2026-10-07T23:30:00-02:00'),'2026-10-08');});
+
+test('today live death list updates immediately while the saved capture stays unchanged',()=>{
+ const current=date;let s=saveDaily(initialState(current),{at:current+'T10:00:00Z'});
+ const original=structuredClone(s.dailyRecords[0]),animal=s.animals[0];
+ s=saveAnimal(s,{...animal,dod:current},'Tester',current+'T11:00:00Z',animal.id);
+ const live=dailyReportView(s,current,{at:stamp}),saved=dailyReportView(s,current,{view:'saved',at:stamp});
+ assert.equal(live.mode,'live');assert.equal(live.current,true);assert.equal(live.unsaved,true);
+ assert.ok(live.tables.deaths.some(a=>a.id===animal.id));assert.ok(!live.tables.stock.some(a=>a.id===animal.id));
+ assert.equal(saved.mode,'saved');assert.ok(!saved.tables.deaths.some(a=>a.id===animal.id));assert.ok(saved.tables.stock.some(a=>a.id===animal.id));
+ assert.deepEqual(s.dailyRecords[0],original);
+ live.record.tables.stock[0].notes='Changed returned copy';saved.tables.stock[0].notes='Changed returned copy';
+ assert.deepEqual(s.dailyRecords[0],original);
+});
+
+test('future stock excludes deceased animals while their original saved record remains available',()=>{
+ const current=date,nextDate=new Date(current+'T12:00:00Z');nextDate.setUTCDate(nextDate.getUTCDate()+1);
+ let s=saveDaily(initialState(current),{at:current+'T10:00:00Z'});const animal=s.animals[0];
+ s=saveAnimal(s,{...animal,dod:current},'Tester',current+'T11:00:00Z',animal.id);
+ const future=dailyTables(s.animals,utcDay(nextDate));assert.ok(!future.stock.some(a=>a.id===animal.id));assert.ok(!future.deaths.some(a=>a.id===animal.id));
+ assert.ok(dailyReportView(s,current,{view:'saved',at:stamp}).tables.stock.some(a=>a.id===animal.id));
+});
+
+test('past report views always use the capture and never reconstruct a missing report',()=>{
+ const current=date,previousDate=new Date(current+'T12:00:00Z');previousDate.setUTCDate(previousDate.getUTCDate()-1);const previous=utcDay(previousDate);
+ const s=saveDaily(initialState(previous),{at:previous+'T10:00:00Z'}),captured=structuredClone(s.dailyRecords[0].tables);
+ s.animals[0].dod=current;s.columns[0].label='Later heading';
+ const historical=dailyReportView(s,previous,{at:stamp});
+ assert.equal(historical.mode,'saved');assert.equal(historical.current,false);assert.equal(historical.unsaved,false);assert.deepEqual(historical.tables,captured);
+ s.dailyRecords=[];const missing=dailyReportView(s,previous,{at:stamp});
+ assert.equal(missing.mode,'missing');assert.equal(missing.tables,null);assert.equal(missing.record,null);assert.equal(missing.unsaved,false);
+});
+
+test('today unsaved status covers unrecorded data and field configuration changes',()=>{
+ const current=date,s=initialState(current),unrecorded=dailyReportView(s,current,{at:stamp});
+ assert.equal(unrecorded.mode,'live');assert.equal(unrecorded.unsaved,true);assert.equal(unrecorded.record,null);
+ assert.equal(dailyReportView(s,current,{view:'saved',at:stamp}).mode,'missing');
+ const saved=saveDaily(s,{at:current+'T10:00:00Z'});assert.equal(dailyReportView(saved,current,{at:stamp}).unsaved,false);
+ saved.columns[0].label='Updated heading';assert.equal(dailyReportView(saved,current,{at:stamp}).unsaved,true);
+ assert.throws(()=>dailyReportView(saved,'invalid',{at:stamp}),/valid daily/);assert.throws(()=>dailyReportView(saved,current,{view:'other',at:stamp}),/live or saved/);
+});

@@ -20,8 +20,10 @@ export function validateAnimal(a,animals,locations,originalId=null,at=today(),sc
  if(originalId&&a.id!==originalId)errors.push('Animal ID cannot be changed in this prototype.');
  if(!(schema.find(f=>f.key==='sex')?.options||['Female','Male','Unknown']).includes(a.sex))errors.push('Choose a valid sex.');
  if(!a.species?.trim())errors.push('Species is required; use Unknown if unconfirmed.');
- const original=animals.find(x=>x.id===originalId),historicHousing=original&&(a.dod||a.departed||a.archived)&&original.room===a.room&&original.cage===a.cage;
- if(!locations.some(x=>x.room===a.room)|| (a.cage&&!locations.some(x=>x.room===a.room&&x.cage===a.cage)&&!historicHousing))errors.push('Select a cage within its room, or leave cage empty for communal housing.');
+ const original=animals.find(x=>x.id===originalId),housingValue=value=>String(value??'').trim();
+ const historicHousing=original&&(original.dod||original.departed||original.archived)&&(a.dod||a.departed||a.archived)&&housingValue(original.room)&&housingValue(original.room)===housingValue(a.room)&&housingValue(original.cage)===housingValue(a.cage);
+ const configuredHousing=locations.some(x=>x.room===a.room)&&(!a.cage||locations.some(x=>x.room===a.room&&x.cage===a.cage));
+ if(!configuredHousing&&!historicHousing)errors.push('Select a cage within its room, or leave cage empty for communal housing.');
  for(const key of ['dob','dod']){
   if(a[key]&&!validDate(a[key]))errors.push('Enter a valid '+(key==='dob'?'birth':'death')+' date.');
   else if(a[key]&&a[key]>at)errors.push('Birth and death dates cannot be in the future.');

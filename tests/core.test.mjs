@@ -9,6 +9,38 @@ test('duplicates, invalid dates, death before birth and inconsistent housing fai
  const errors=validateAnimal(a,s.animals,s.locations,null,at);
  assert.ok(errors.some(e=>e.includes('already exists')));assert.ok(errors.some(e=>e.includes('valid birth')));assert.ok(errors.some(e=>e.includes('before birth')));assert.ok(errors.some(e=>e.includes('within its room')));
 });
+
+test('historical animal notes can be edited after its room is removed, preserving optional cage blanks',()=>{
+ const s=seed();
+ for(const status of [{dod:at},{departed:at},{archived:true}]){
+  const original={...s.animals[0],...status,room:'Retired room',cage:undefined},animals=[original,...s.animals.slice(1)];
+  assert.deepEqual(validateAnimal({...original,cage:'',notes:'Additional context'},animals,s.locations,original.id,at),[]);
+ }
+});
+
+test('historical missing cages remain valid only while their exact room and cage are preserved',()=>{
+ const s=seed(),original={...s.animals[0],dod:at,room:'Room A',cage:'Retired cage'},animals=[original,...s.animals.slice(1)];
+ assert.deepEqual(validateAnimal({...original,notes:'Additional context'},animals,s.locations,original.id,at),[]);
+ assert.ok(validateAnimal({...original,cage:'Another retired cage'},animals,s.locations,original.id,at).some(error=>error.includes('within its room')));
+ assert.ok(validateAnimal({...original,room:'Another retired room'},animals,s.locations,original.id,at).some(error=>error.includes('within its room')));
+ assert.deepEqual(validateAnimal({...original,room:'Room B',cage:'B-01'},animals,s.locations,original.id,at),[]);
+});
+
+test('reviving a historical record requires a configured current room and cage',()=>{
+ const s=seed();
+ for(const status of [{dod:at},{departed:at},{archived:true}]){
+  const original={...s.animals[0],...status,room:'Retired room',cage:'R-01'},animals=[original,...s.animals.slice(1)],revived={...original,dod:'',departed:'',archived:false};
+  assert.ok(validateAnimal(revived,animals,s.locations,original.id,at).some(error=>error.includes('within its room')));
+  assert.deepEqual(validateAnimal({...revived,room:'Room A',cage:''},animals,s.locations,original.id,at),[]);
+ }
+});
+
+test('new and living animals cannot legitimize invalid housing by recording a death',()=>{
+ const s=seed(),living={...s.animals[0],room:'Retired room',cage:'R-01'},animals=[living,...s.animals.slice(1)];
+ assert.ok(validateAnimal({...living,dod:at},animals,s.locations,living.id,at).some(error=>error.includes('within its room')));
+ assert.ok(validateAnimal({...living,id:'NEW-ANIMAL',dod:at},s.animals,s.locations,null,at).some(error=>error.includes('within its room')));
+ assert.ok(validateAnimal({...living,notes:'Update'},animals,s.locations,living.id,at).some(error=>error.includes('within its room')));
+});
 test('unknown dates permitted; future events rejected',()=>{const s=seed(),a={...s.animals[3],dob:'',dod:''};assert.deepEqual(validateAnimal(a,s.animals,s.locations,a.id,at),[]);a.dob='2027-01-01';assert.ok(validateAnimal(a,s.animals,s.locations,a.id,at).some(e=>e.includes('future')));});
 test('pedigree cycles rejected',()=>{const s=seed(),a={...s.animals[0],mother:'DEMO-016'};assert.ok(validateAnimal(a,s.animals,s.locations,a.id,at).some(e=>e.includes('cycle')));});
 test('editing a parent cannot make its offspring older than it',()=>{const s=seed(),a={...s.animals[0],dob:at};assert.ok(validateAnimal(a,s.animals,s.locations,a.id,at).some(e=>e.includes('parent')||e.includes('Parent')));});

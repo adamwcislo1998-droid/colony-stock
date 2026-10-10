@@ -1,4 +1,5 @@
 import {validDate,saveAnimal} from './core.mjs';
+import {isPresent,utcDay} from './daily.mjs';
 export const utcDate=()=>new Date().toISOString().slice(0,10);
 export function validateEventDates(before,after,date=utcDate()) {
  const errors=[];
@@ -44,6 +45,27 @@ export function moveCage(state,room,cage,targetRoom,actor,at=new Date().toISOStr
  next.events.push({id:crypto.randomUUID(),at,actor,action:'Cage moved',locationBefore:{room,cage},locationAfter:{room:targetRoom,cage},animalId:'',before:null,after:null,snapshot:structuredClone(next.animals)});
  return next;
 }
+export function removeCage(state,room,cage,actor,at=new Date().toISOString()) {
+ if(typeof cage!=='string'||!cage.trim()||!state.locations.some(l=>l.room===room&&l.cage===cage))throw new Error('Choose an existing cage to remove.');
+ const date=utcDay(at);
+ if(state.animals.some(a=>a.room===room&&a.cage===cage&&isPresent(a,date)))throw new Error('This cage is occupied. Move all present animals before removing it.');
+ const next=structuredClone(state);
+ next.locations=next.locations.filter(l=>!(l.room===room&&l.cage===cage));
+ if(!next.locations.some(l=>l.room===room))next.locations.push({room,cage:''});
+ next.settings={...next.settings,housingInitialized:true};
+ next.events.push({id:crypto.randomUUID(),at,actor,action:'Cage removed',locationBefore:{room,cage},locationAfter:null,animalId:'',before:null,after:null,snapshot:structuredClone(next.animals)});
+ return next;
+}
+export function removeRoom(state,room,actor,at=new Date().toISOString()) {
+ if(!state.locations.some(l=>l.room===room))throw new Error('Choose an existing room to remove.');
+ const date=utcDay(at);
+ if(state.animals.some(a=>a.room===room&&isPresent(a,date)))throw new Error('This room is occupied. Move all present animals before removing it.');
+ const next=structuredClone(state);
+ next.locations=next.locations.filter(l=>l.room!==room);
+ next.settings={...next.settings,housingInitialized:true};
+ next.events.push({id:crypto.randomUUID(),at,actor,action:'Room removed',locationBefore:{room},locationAfter:null,animalId:'',before:null,after:null,snapshot:structuredClone(next.animals)});
+ return next;
+}
 export function pedigreeMarkup(animals,id,esc) {
  const map=new Map(animals.map(a=>[a.id,a]));
  function node(key,depth,path=new Set()) {
@@ -54,5 +76,5 @@ export function pedigreeMarkup(animals,id,esc) {
   return '<li><button class="pedigree-node" data-detail="'+esc(key)+'"><strong>'+esc(key)+'</strong><small>'+esc(a.sex||'Unknown')+(a.dod?' · deceased':a.departed?' · departed':'')+'</small></button>'+(depth>0&&(a.mother||a.father)?'<ul>'+node(a.mother,depth-1,nextPath)+node(a.father,depth-1,nextPath)+'</ul>':'')+'</li>';
  }
  const children=animals.filter(a=>a.mother===id||a.father===id);
- return '<div class="pedigree"><h3>Ancestors</h3><p class="subtle">Up to four generations. Select an animal to inspect its own tree.</p><ul>'+node(id,3)+'</ul><h3>Children</h3><div class="pedigree-children">'+(children.length?children.map(a=>'<button class="pedigree-node" data-detail="'+esc(a.id)+'">'+esc(a.id)+'</button>').join(''):'<p class="subtle">No recorded children.</p>')+'</div></div>';
+ return '<section class="pedigree" tabindex="-1" aria-label="Family tree for '+esc(id)+'"><h3>Family tree</h3><p class="subtle">Built from the recorded parent links. Select an animal to open its record and tree.</p><h4>Ancestors · up to four generations</h4><ul>'+node(id,4)+'</ul><h4>Direct children</h4><div class="pedigree-children">'+(children.length?children.map(a=>'<button class="pedigree-node" data-detail="'+esc(a.id)+'">'+esc(a.id)+'</button>').join(''):'<p class="subtle">No recorded children.</p>')+'</div></section>';
 }

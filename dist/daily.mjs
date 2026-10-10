@@ -10,6 +10,14 @@ export function isPresent(animal,date=utcDay()){
 export function dailyTables(animals,date){
  checkDate(date);return structuredClone({stock:animals.filter(a=>isPresent(a,date)),births:animals.filter(a=>a.dob===date),deaths:animals.filter(a=>a.dod===date)});
 }
+export function dailyReportView(state,date,{view='live',at=new Date()}={}){
+ checkDate(date);
+ if(!['live','saved'].includes(view))throw new Error('Choose the live or saved daily report.');
+ const current=date===utcDay(at),record=(state.dailyRecords||[]).find(r=>r.date===date)||null;
+ const unsaved=current&&(!record||JSON.stringify(record.animals)!==JSON.stringify(state.animals)||JSON.stringify(record.columns)!==JSON.stringify(state.columns||defaultColumns()));
+ const mode=current&&view==='live'?'live':record?'saved':'missing';
+ return {record:record?structuredClone(record):null,tables:mode==='live'?dailyTables(state.animals,date):mode==='saved'?structuredClone(record.tables):null,mode,unsaved,current};
+}
 function columnsAt(state,date){
  const definitions=state.events.filter(e=>e.schemaAfter?.columns).sort((a,b)=>a.at.localeCompare(b.at));
  const previous=definitions.filter(e=>e.at.slice(0,10)<=date).at(-1);
