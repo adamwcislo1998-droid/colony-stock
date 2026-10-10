@@ -1,8 +1,18 @@
-import {today,age,initialState,validateAnimal,saveAnimal,asOf,filterAnimals,cell,exportRows,csv,defaultColumns,saveGroup,groupTimeline} from './core.mjs';
+import {today,age,initialState,expandDemo,validateAnimal,saveAnimal,asOf,filterAnimals,cell,exportRows,csv,defaultColumns,saveGroup,groupTimeline} from './core.mjs';
 import {workbook} from './xlsx.mjs';
+import {familyTree} from './pedigree.mjs';
 import {fieldTypes,configurable,choices,fieldValue,schemaErrors,saveColumns} from './fields.mjs';
 const $=s=>document.querySelector(s),esc=v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#39;");
 const key='st-andrews-colony-v1',pages=['overview','stock','housing','reports','groups','favourites','history','brief'];
+let treeFull=false,treeAnimalId=null,treeZoom=1;
+function zoomTree(value){treeZoom=Math.max(.1,Math.min(2,value));const canvas=$('.family-canvas');if(canvas)canvas.style.zoom=treeZoom;const output=$('#tree-zoom-value');if(output)output.textContent=Math.round(treeZoom*100)+'%';}
+document.addEventListener('click',e=>{
+ const b=e.target.closest('button');if(!b)return;
+ if(b.dataset.treeMode){treeFull=b.dataset.treeMode==='full';detail(treeAnimalId);}
+ if(b.dataset.treeZoom)zoomTree(treeZoom+Number(b.dataset.treeZoom));
+ if(b.hasAttribute('data-tree-fit')){zoomTree(1);const viewport=$('.family-scroll'),canvas=$('.family-canvas');zoomTree(Math.min(1,(viewport.clientWidth-24)/canvas.scrollWidth));viewport.scrollTo(0,0);}
+ if(b.hasAttribute('data-tree-expand')){$('#detail-dialog').classList.toggle('expanded-tree');b.textContent=$('#detail-dialog').classList.contains('expanded-tree')?'Restore view':'Expand view';}
+});
 let raw=null,state,storageIssue='',page='overview',filter={status:'living'},tablePage=1,reportType='full',reportDate=today(),allDates=false,currentRows=[],editId=null,columnDraft=[],pendingFilter=null,toastTimer,selectedGroupId=null,editingGroupId=null;
 try{
  raw=localStorage.getItem(key);state=raw?JSON.parse(raw):initialState();
@@ -41,7 +51,7 @@ function startCell(td){
  if(!td.isConnected)return;
  const a=state.animals.find(a=>a.id===td.dataset.animal),c=state.columns.find(c=>c.key===td.dataset.cell);
  if(!a||!c)return;
- const input=(key,type='text')=>'<input data-value="'+key+'" aria-label="'+esc(key==='mother'?'Parent 1':key==='father'?'Parent 2':c.label)+'" type="'+type+'" value="'+esc(c.custom?a.extra?.[key]:a[key])+'"'+(['dob','dod'].includes(key)?' max="'+today()+'"':'')+'>';
+ const input=(key,type='text')=>'<input data-value="'+key+'" aria-label="'+esc(key==='mother'?'Mother':key==='father'?'Father':c.label)+'" type="'+type+'" value="'+esc(c.custom?a.extra?.[key]:a[key])+'"'+(['dob','dod'].includes(key)?' max="'+today()+'"':'')+'>';
  const select=(key,items,value,empty='')=>'<select data-value="'+key+'" aria-label="'+esc(key==='room'?'Room':key==='cage'?'Cage':c.label)+'">'+options(items,value,empty)+'</select>';
  activeCell={td,a,c,html:td.innerHTML};td.classList.add('editing');
  if(c.key==='parents')td.innerHTML=input('mother')+input('father');
@@ -89,11 +99,11 @@ document.addEventListener('keydown',e=>{
  if(finishCell()){const next=[...document.querySelectorAll('[data-cell]')].find(x=>x.dataset.animal===(dest?.id||td.dataset.animal)&&x.dataset.cell===(dest?.key||td.dataset.cell));if(next){next.focus();if(dest)startCell(next);}}
 });
 function table(rows,at=today()){
- currentRows=rows;const c=state.columns.filter(x=>x.visible),max=Math.max(1,Math.ceil(rows.length/25));tablePage=Math.min(tablePage,max);
+ currentRows=rows;const c=state.columns.filter(x=>x.visible);
  if(!c.length)return '<div class="empty">Configure at least one visible column.</div>';
  if(!rows.length)return '<div class="empty"><strong>No matching records</strong>Change the filters, select another date or add an animal.</div>';
- const chunk=rows.slice((tablePage-1)*25,tablePage*25);
- return '<div class="table-wrap"><table><thead><tr><th aria-label="Favourite"></th>'+c.map(x=>'<th scope="col">'+esc(x.label)+'</th>').join('')+'<th scope="col">Status</th><th scope="col">Record</th></tr></thead><tbody>'+chunk.map(a=>'<tr><td><button class="star '+(state.favourites.includes(a.id)?'saved':'')+'" data-star="'+esc(a.id)+'" aria-label="'+(state.favourites.includes(a.id)?'Remove':'Add')+' favourite '+esc(a.id)+'" aria-pressed="'+state.favourites.includes(a.id)+'">'+(state.favourites.includes(a.id)?'★':'☆')+'</button></td>'+c.map(x=>tableCell(a,x,at)).join('')+'<td><span class="tag '+(a.dod?'deceased':'')+'">'+(a.dod?'Deceased':'Living')+'</span></td><td><button class="text-button" data-detail="'+esc(a.id)+'">Details ↗</button></td></tr>').join('')+'</tbody></table></div><div class="table-foot"><span>'+rows.length+' matching record'+(rows.length!==1?'s':'')+' · exports include all matching rows</span><div class="pagination"><button data-pagination="-1"'+(tablePage===1?' disabled':'')+'>Previous</button><span>'+tablePage+' / '+max+'</span><button data-pagination="1"'+(tablePage===max?' disabled':'')+'>Next</button></div></div>';
+
+ return '<div class="table-wrap animal-list" tabindex="0" aria-label="Animal records; scroll to browse all matching animals"><table><thead><tr><th aria-label="Favourite"></th>'+c.map(x=>'<th scope="col">'+esc(x.label)+'</th>').join('')+'<th scope="col">Status</th><th scope="col">Record</th></tr></thead><tbody>'+rows.map(a=>'<tr><td><button class="star '+(state.favourites.includes(a.id)?'saved':'')+'" data-star="'+esc(a.id)+'" aria-label="'+(state.favourites.includes(a.id)?'Remove':'Add')+' favourite '+esc(a.id)+'" aria-pressed="'+state.favourites.includes(a.id)+'">'+(state.favourites.includes(a.id)?'★':'☆')+'</button></td>'+c.map(x=>tableCell(a,x,at)).join('')+'<td><span class="tag '+(a.dod?'deceased':'')+'">'+(a.dod?'Deceased':'Living')+'</span></td><td><button class="text-button" data-detail="'+esc(a.id)+'">Details ↗</button></td></tr>').join('')+'</tbody></table></div><div class="table-foot"><span>'+rows.length+' matching record'+(rows.length!==1?'s':'')+' · exports include all matching rows</span></div>';
 }
 function overview(){
  const living=state.animals.filter(a=>!a.dod),d=today(),week=new Date(d+'T12:00:00Z');week.setUTCDate(week.getUTCDate()-6);const start=week.toISOString().slice(0,10);
@@ -130,7 +140,7 @@ function trackGroup(){
  return heading(g.name,g.notes||'Research cohort tracking','<button class="button secondary" data-action="all-groups">All groups</button><button class="button secondary" data-group="'+esc(g.id)+'">View stock & export</button><button class="button primary" data-edit-group="'+esc(g.id)+'">Edit membership</button>')+'<div class="callout">Counts reflect saved group membership and animal state at each recorded day. Activity includes changes made while an animal was a member. All times are UTC.</div><div class="overview-grid"><section class="panel"><div class="panel-head"><h2>Group over time</h2></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Members</th><th>Living</th><th>Deceased</th></tr></thead><tbody>'+timeline.days.map(d=>'<tr><td>'+d.date+'</td><td>'+d.members+'</td><td>'+d.living+'</td><td>'+d.deceased+'</td></tr>').join('')+'</tbody></table></div></section><section class="panel"><div class="panel-head"><h2>Current membership</h2><span class="tag">'+g.animalIds.length+' records</span></div><div class="activity">'+g.animalIds.map(id=>{const a=state.animals.find(x=>x.id===id);return '<div class="activity-item"><span class="event-dot"></span><div><button class="id-link" data-detail="'+esc(id)+'">'+esc(id)+'</button><p class="subtle">'+esc(a?.room||'Unknown')+' / '+esc(a?.cage||'Unknown')+' · '+(a?.dod?'Deceased':'Living')+'</p></div></div>';}).join('')+'</div></section></div><section class="panel"><div class="panel-head"><h2>Cohort activity & membership history</h2></div>'+timeline.events.reverse().map(historyItem).join('')+'</section>';
 }
 function historyItem(e){
- const labels={id:'Animal ID',species:'Species',sex:'Sex',room:'Room',cage:'Cage',line:'Line',pob:'Place of birth',mother:'Parent 1',father:'Parent 2',dob:'Date of birth',dod:'Date of death',notes:'Notes'};
+ const labels={id:'Animal ID',species:'Species',sex:'Sex',room:'Room',cage:'Cage',line:'Line',pob:'Place of birth',mother:'Mother',father:'Father',dob:'Date of birth',dod:'Date of death',notes:'Notes'};
  let changes=[];
  if(e.before&&e.after){for(const k of Object.keys(labels))if(e.before[k]!==e.after[k])changes.push(labels[k]+': '+(e.before[k]||'—')+' → '+(e.after[k]||'—'));for(const f of state.columns.filter(x=>x.custom))if((e.before.extra?.[f.key]||'')!==(e.after.extra?.[f.key]||''))changes.push(f.label+': '+(e.before.extra?.[f.key]||'—')+' → '+(e.after.extra?.[f.key]||'—'));}
  else if(e.groupAfter){const before=e.groupBefore?.animalIds||[],after=e.groupAfter.animalIds;changes=['Group: '+e.groupAfter.name];const added=after.filter(id=>!before.includes(id)),removed=before.filter(id=>!after.includes(id));if(added.length)changes.push('Members added: '+added.join(', '));if(removed.length)changes.push('Members removed: '+removed.join(', '));if(e.groupBefore?.notes!==e.groupAfter.notes)changes.push('Research notes: '+(e.groupAfter.notes||'—'));}
@@ -168,10 +178,11 @@ function openRecord(id=null){
  $('#record-dialog').showModal();
 }
 function detail(id){
- const a=currentRows.find(x=>x.id===id)||state.animals.find(x=>x.id===id);if(!a)return;
+ treeAnimalId=id;treeZoom=1;
+ const source=page==='reports'&&reportType==='full'?(asOf(state,reportDate)||[]):state.animals;const a=source.find(x=>x.id===id);if(!a)return;
  const historical=page==='reports'&&reportType==='full';
- const fields=[['Species',a.species],['Sex',a.sex],['Room / cage',a.room+' / '+a.cage],['Line',a.line],['Age',age(a.dob,historical?reportDate:today(),a.dod)],['Birth date',a.dob],['Death date',a.dod],['Parent 1',a.mother],['Parent 2',a.father],['Place of birth',a.pob],...state.columns.filter(x=>x.custom).map(f=>[f.label,a.extra?.[f.key]])];
- $('#detail-content').innerHTML='<div class="dialog-heading"><div><div class="eyebrow">'+(historical?'SAVED STATE · '+reportDate:'ANIMAL RECORD')+'</div><h2>'+esc(a.id)+'</h2></div><button class="icon-button" data-close="detail-dialog" aria-label="Close animal details">×</button></div><dl class="detail-grid">'+fields.map(([k,v])=>'<div><dt>'+esc(k)+'</dt><dd>'+esc(v||'Unknown / not specified')+'</dd></div>').join('')+'</dl><h3>Notes</h3><p class="detail-notes">'+esc(a.notes||'No notes recorded.')+'</p>'+(historical?'<p class="subtle">This is the saved record at the selected date. Open the current register to edit.</p>':'<button class="button primary" data-edit="'+esc(a.id)+'">Edit record</button>')+'<div class="detail-history"><h3>Record history</h3>'+state.events.filter(e=>e.animalId===id&&(!historical||e.at.slice(0,10)<=reportDate)).reverse().map(historyItem).join('')+'</div>';
+ const fields=[['Species',a.species],['Sex',a.sex],['Room / cage',a.room+' / '+a.cage],['Line',a.line],['Age',age(a.dob,historical?reportDate:today(),a.dod)],['Birth date',a.dob],['Death date',a.dod],['Mother',a.mother],['Father',a.father],['Place of birth',a.pob],...state.columns.filter(x=>x.custom).map(f=>[f.label,a.extra?.[f.key]])];
+ $('#detail-content').innerHTML='<div class="dialog-heading"><div><div class="eyebrow">'+(historical?'SAVED STATE · '+reportDate:'ANIMAL RECORD')+'</div><h2>'+esc(a.id)+'</h2></div><button class="icon-button" data-close="detail-dialog" aria-label="Close animal details">×</button></div><dl class="detail-grid">'+fields.map(([k,v])=>'<div><dt>'+esc(k)+'</dt><dd>'+esc(v||'Unknown / not specified')+'</dd></div>').join('')+'</dl>'+familyTree(a,historical?(asOf(state,reportDate)||[]):state.animals,esc,treeFull)+'<h3>Notes</h3><p class="detail-notes">'+esc(a.notes||'No notes recorded.')+'</p>'+(historical?'<p class="subtle">This is the saved record at the selected date. Open the current register to edit.</p>':'<button class="button primary" data-edit="'+esc(a.id)+'">Edit record</button>')+'<div class="detail-history"><h3>Record history</h3>'+state.events.filter(e=>e.animalId===id&&(!historical||e.at.slice(0,10)<=reportDate)).reverse().map(historyItem).join('')+'</div>';
  $('#detail-dialog').showModal();
 }
 function download(content,name,type){const url=URL.createObjectURL(new Blob([content],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
@@ -255,5 +266,10 @@ $('#save-columns').addEventListener('click',()=>{
  if(commit(saveColumns(state,columns,'Demo researcher'))){$('#columns-dialog').close();render();notify('Fields and value rules saved.');}
 });
 $('#backup').addEventListener('click',()=>download(JSON.stringify(state,null,2),'colony-demo-backup-'+today()+'.json','application/json'));
+const expandedDemo=expandDemo(state);if(expandedDemo!==state)commit(expandedDemo);
 window.addEventListener('storage',e=>{if(e.key===key)notify('Data changed in another tab. Reload to use its latest saved state.');});
 render();
+
+
+
+

@@ -42,6 +42,13 @@ export function initialState(at=new Date().toISOString().slice(0,10)){
  const animals=Array.from({length:18},(_,i)=>({id:'DEMO-'+String(i+1).padStart(3,'0'),species:'Bat (species to be specified)',sex:i%3===0?'Male':i%3===1?'Female':'Unknown',...locations[i%locations.length],line:i%2?'Line B':'Line A',pob:'',mother:i>11?'DEMO-002':'',father:i>11?'DEMO-001':'',dob:i>14?day(-(i-15)):day(-420-i*17),dod:i===13?day(-1):i===14?day(-6):'',notes:i===0?'Synthetic parent record.':i===15?'Synthetic birth record for reviewing the workflow.':'Demonstration record.',extra:{}}));
  // Demo parents must be older than their offspring.
  animals[0].dob=day(-1600);animals[1].dob=day(-1500);
+ // Four generations, several breeding pairs and partial pedigrees for realistic testing.
+ for(let i=18;i<170;i++){
+  const generation=i<50?0:i<90?1:i<130?2:3;
+  const start=generation===1?18:generation===2?50:90;
+  const pair=generation?start+2*(Math.floor((i-(generation===1?50:generation===2?90:130))/4)%15):0;
+  animals.push({id:'DEMO-'+String(i+1).padStart(3,'0'),species:'Bat (species to be specified)',sex:i%2?'Female':'Male',...locations[i%locations.length],line:['Line A','Line B','Line C'][Math.floor(i/4)%3],pob:i%9===0?'Unknown':'St Andrews colony',mother:generation&&i%13!==0?animals[pair+1].id:'',father:generation&&i%11!==0?animals[pair].id:'',dob:day(-(generation===0?2400+i*3:generation===1?1200+(i-50)*3:generation===2?600+(i-90)*3:60+(i-130)*3)),dod:i%23===0?day(-1-i%6):'',notes:generation?'Synthetic generation '+(generation+1)+' record.':'Synthetic founder; ancestry not recorded.',extra:{}});
+ }
  const baseline={id:'seed',at:day(-7)+'T00:00:00.000Z',actor:'Demo data',action:'Demo baseline',animalId:'',before:null,after:null,snapshot:animals.filter(a=>a.dob<=day(-7)).map(a=>({...a,dod:''}))},events=[baseline];
  const changes=animals.filter(a=>a.dob>day(-7)||a.dod).map(a=>({a,date:a.dod||a.dob})).sort((a,b)=>a.date.localeCompare(b.date));
  let snapshot=structuredClone(baseline.snapshot);
@@ -56,6 +63,23 @@ export function saveAnimal(state,a,actor,at=new Date().toISOString(),originalId=
  for(const c of next.columns.filter(configurable)){const v=String(fieldValue(a,c)).trim();if(c.type==='select'&&c.allowNew&&v&&!c.options?.includes(v))c.options=[...(c.options||[]),v];}
  const action=!before?'Animal added':!before.dod&&a.dod?'Death recorded':before.dod&&!a.dod?'Death corrected':'Record updated';
  next.events.push({id:crypto.randomUUID(),at,actor,action,animalId:a.id,before:before?structuredClone(before):null,after:structuredClone(a),snapshot:structuredClone(next.animals)});return next;
+}
+export function expandDemo(state,at=new Date().toISOString()){
+ if(state.demoExpanded||state.animals.length>=170||!Array.from({length:18},(_,i)=>'DEMO-'+String(i+1).padStart(3,'0')).every(id=>state.animals.some(a=>a.id===id)))return state;
+ const next=structuredClone(state),sample=initialState(at.slice(0,10));
+ const existing=new Set(next.animals.map(a=>a.id));
+ for(const a of sample.animals.filter(a=>!existing.has(a.id))){
+  const location=next.locations.find(l=>l.room===a.room&&l.cage===a.cage)||next.locations[0];
+  if(!location)return state;
+  next.animals.push({...a,...location});
+ }
+ for(const a of next.animals.filter(a=>!existing.has(a.id)))for(const role of ['mother','father']){
+  const parent=next.animals.find(p=>p.id===a[role]);
+  if(parent?.dob&&parent.dob>a.dob)a[role]='';
+ }
+ next.demoExpanded=true;
+ next.events.push({id:crypto.randomUUID(),at,actor:'Demo data',action:'Demo expanded to 170 animals',animalId:'',before:null,after:null,snapshot:structuredClone(next.animals)});
+ return next;
 }
 export function asOf(state,date){const events=state.events.filter(e=>e.at.slice(0,10)<=date).sort((a,b)=>a.at.localeCompare(b.at));return events.length?structuredClone(events.at(-1).snapshot):null;}
 export function filterAnimals(animals,f={}){

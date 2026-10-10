@@ -1,0 +1,19 @@
+export function ancestorTree(animal,records,maxDepth=Infinity){
+ const byId=new Map(records.map(a=>[a.id,a])),seen=new Set([animal.id]);
+ function visit(id,role,depth){
+  const a=byId.get(id);if(!a)return {role,animal:null};
+  if(seen.has(id))return {role,animal:a,repeated:true};
+  seen.add(id);
+  return {role,animal:a,parents:depth<maxDepth&&(a.mother||a.father)?[visit(a.mother,'Mother',depth+1),visit(a.father,'Father',depth+1)]:[],limited:depth===maxDepth&&!!(a.mother||a.father)};
+ }
+ return [visit(animal.mother,'Mother',1),visit(animal.father,'Father',1)];
+}
+export function familyTree(animal,records,esc,full=false){
+ const byId=new Map(records.map(a=>[a.id,a]));
+ const card=(a,role,kind='')=>'<div class="family-card '+kind+'"><span class="family-role">'+role+'</span>'+(a?'<button class="id-link" data-detail="'+esc(a.id)+'">'+esc(a.id)+'</button><span>'+esc(a.sex)+' · '+(a.dod?'Deceased':'Living')+'</span><small>'+esc(a.line||'Line not recorded')+' · '+esc(a.room)+' / '+esc(a.cage)+'</small>':'<strong>Not recorded</strong><small>Parentage unknown</small>')+'</div>';
+ const branch=node=>'<div class="ancestor-node">'+card(node.animal,node.role,node.role==='Mother'?'maternal':'paternal')+(node.repeated?'<small class="ancestor-note">Shared ancestor · already shown elsewhere</small>':node.limited?'<small class="ancestor-note">More ancestors · choose Full ancestry</small>':node.parents?.length?'<details class="ancestor-expansion" open><summary>Show / hide parents</summary><div class="ancestor-branches">'+node.parents.map(branch).join('')+'</div></details>':'')+'</div>';
+ const children=records.filter(a=>a.mother===animal.id||a.father===animal.id);
+ const siblings=records.filter(a=>a.id!==animal.id&&((animal.mother&&a.mother===animal.mother)||(animal.father&&a.father===animal.father)));
+ return '<section class="pedigree"><div class="family-heading"><div><h3>Family tree</h3><p class="subtle">'+(full?'All recorded ancestry':'Two generations of ancestry')+' · select an animal to explore its family</p></div><div class="family-legend"><span>♀ Mother branch</span><span>♂ Father branch</span></div></div><div class="tree-controls"><button class="button secondary" data-tree-mode="compact" aria-pressed="'+!full+'">2 generations</button><button class="button secondary" data-tree-mode="full" aria-pressed="'+full+'">Full ancestry</button><button class="button secondary" data-tree-zoom="-0.15" aria-label="Zoom out">−</button><output id="tree-zoom-value">100%</output><button class="button secondary" data-tree-zoom="0.15" aria-label="Zoom in">＋</button><button class="button secondary" data-tree-fit>Fit</button><button class="button secondary" data-tree-expand>Expand view</button></div><p class="subtle">Scroll in either direction. Collapse parent branches to focus on one family. Shared ancestors appear once, with references elsewhere.</p><div class="family-scroll" tabindex="0" aria-label="Family tree; scroll horizontally to explore"><div class="family-canvas"><div class="family-focus">'+card(animal,'Selected animal','selected')+'</div><div class="family-connector" aria-hidden="true"></div><div class="ancestor-branches">'+ancestorTree(animal,records,full?Infinity:2).map(branch).join('')+'</div></div></div><div class="family-relatives"><section><h4>Offspring <span class="tag">'+children.length+'</span></h4><div class="relative-list">'+(children.length?children.map(a=>card(a,'As '+(a.mother===animal.id?'mother':'father'))).join(''):'<p class="subtle">No offspring recorded.</p>')+'</div></section><section><h4>Siblings <span class="tag">'+siblings.length+'</span></h4><p class="subtle">Share at least one recorded parent</p><div class="relative-list">'+(siblings.length?siblings.map(a=>card(a,a.mother===animal.mother&&a.father===animal.father&&animal.mother&&animal.father?'Full sibling':'Half / possible full sibling')).join(''):'<p class="subtle">No siblings recorded.</p>')+'</div></section></div></section>';
+}
+
