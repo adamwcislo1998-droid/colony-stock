@@ -39,9 +39,10 @@ function researchChanges(event){
 function count(record,key){if(!record)return null;if(Array.isArray(record.tables?.[key]))return record.tables[key].length;if(Array.isArray(record.rows?.[key]))return Math.max(0,record.rows[key].length-1);return null;}
 function fieldDescription(field){
  if(!field)return '';
- return [field.label||field.key,field.type||'text',field.required?'required':'optional',field.visible===false?'hidden':'visible',...(list(field.options).length?['choices: '+field.options.join(', ')]:[])].join(' · ');
+ return [field.label||field.key,field.type||'text',field.required?'required':'optional',field.visible===false?'hidden':'visible',...(list(field.options).length?['choices: '+field.options.join(', ')]:[]),...(field.allowNew?['new choices allowed']:[]),...(field.defaultValue?['default: '+field.defaultValue]:[]),...(field.min!==''&&field.min!=null?['minimum: '+field.min]:[]),...(field.max!==''&&field.max!=null?['maximum: '+field.max]:[]),...(field.description?['guidance: '+field.description]:[])].join(' · ');
 }
 export function eventChanges(event={},columns=[]){
+ if(event.columnsBefore||event.columnsAfter)event={...event,schemaBefore:event.schemaBefore||{columns:event.columnsBefore},schemaAfter:event.schemaAfter||{columns:event.columnsAfter}};
  const changes=[];
  for(const review of list(event.recordReviews)){
   addChange(changes,'Approval for '+review.animalId,'Pending',review.status==='approved'?'Approved':'Reverted');

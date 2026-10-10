@@ -19,7 +19,7 @@ export function dailyReportView(state,date,{view='live',at=new Date()}={}){
  return {record:record?structuredClone(record):null,tables:mode==='live'?dailyTables(state.animals,date):mode==='saved'?structuredClone(record.tables):null,mode,unsaved,current};
 }
 function columnsAt(state,date){
- const definitions=state.events.filter(e=>e.schemaAfter?.columns).sort((a,b)=>a.at.localeCompare(b.at));
+ const definitions=state.events.filter(e=>e.schemaAfter?.columns||e.columnsAfter).map(e=>({...e,schemaBefore:e.schemaBefore||{columns:e.columnsBefore},schemaAfter:e.schemaAfter||{columns:e.columnsAfter}})).sort((a,b)=>a.at.localeCompare(b.at));
  const previous=definitions.filter(e=>e.at.slice(0,10)<=date).at(-1);
  return previous?.schemaAfter.columns||definitions.find(e=>e.at.slice(0,10)>date)?.schemaBefore?.columns||state.columns||defaultColumns();
 }

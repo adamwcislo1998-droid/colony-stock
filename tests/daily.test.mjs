@@ -81,3 +81,8 @@ test('today unsaved status covers unrecorded data and field configuration change
  saved.columns[0].label='Updated heading';assert.equal(dailyReportView(saved,current,{at:stamp}).unsaved,true);
  assert.throws(()=>dailyReportView(saved,'invalid',{at:stamp}),/valid daily/);assert.throws(()=>dailyReportView(saved,current,{view:'other',at:stamp}),/live or saved/);
 });
+
+test('automatic capture respects field history written by the earlier published version',()=>{
+ const s=seed(),before=structuredClone(s.columns);s.columns[0].label='Renamed after midnight';s.events.push({id:'legacy-columns',at:'2026-10-08T00:01:00Z',columnsBefore:before,columnsAfter:structuredClone(s.columns),snapshot:structuredClone(s.animals)});
+ const next=automaticDaily(s,'2026-10-08T00:05:00Z');assert.deepEqual(next.dailyRecords[0].columns,before);
+});

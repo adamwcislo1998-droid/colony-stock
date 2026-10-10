@@ -3,6 +3,14 @@ import assert from 'node:assert/strict';
 import {initialState,validateAnimal,saveAnimal,asOf,age,filterAnimals,exportRows,csv,defaultColumns} from '../dist/core.mjs';
 import {workbook} from '../dist/xlsx.mjs';
 const at='2026-10-07',seed=()=>initialState(at);
+import {expandDemo} from '../dist/core.mjs';
+test('saved small demo expands without replacing edits or historical snapshots',()=>{
+ const s=seed();s.animals=s.animals.slice(0,18);s.animals[0].notes='My saved edit';s.favourites=['DEMO-006'];
+ const before=structuredClone(s),n=expandDemo(s,'2026-10-09T12:00:00Z');
+ assert.equal(n.animals.length,170);assert.equal(n.animals[0].notes,'My saved edit');assert.deepEqual(n.favourites,s.favourites);assert.deepEqual(n.events.slice(0,-1),s.events);assert.deepEqual(s,before);assert.equal(expandDemo(n),n);
+ for(const a of n.animals)assert.deepEqual(validateAnimal(a,n.animals,n.locations,a.id,'2026-10-09'),[]);
+});
+test('expanded demo has 170 unique animals and multiple pedigree generations',()=>{const s=seed();assert.equal(s.animals.length,170);assert.equal(new Set(s.animals.map(a=>a.id)).size,170);assert.ok(s.animals.some(a=>s.animals.find(p=>p.id===a.mother)?.mother));assert.ok(s.animals.some(a=>a.mother&&!a.father));assert.equal(asOf(s,at).length,170);});
 test('all demo records satisfy domain validation',()=>{const s=seed();for(const a of s.animals)assert.deepEqual(validateAnimal(a,s.animals,s.locations,a.id,at),[]);});
 test('duplicates, invalid dates, death before birth and inconsistent housing fail',()=>{
  const s=seed(),a={...s.animals[0],dob:'2026-02-30',dod:'2025-01-01',room:'Room B',cage:'A-01'};
@@ -69,3 +77,4 @@ test('cohort history preserves membership and excludes edits after removal',()=>
 test('synthetic timestamps never follow the current real time',()=>{
  const s=initialState();assert.ok(s.events.every(e=>Date.parse(e.at)<=Date.now()));
 });
+

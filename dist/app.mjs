@@ -1,9 +1,11 @@
+import {fieldTypes,configurable,choices,fieldValue,schemaErrors} from './fields.mjs';
+import {familyTree} from './pedigree.mjs';
 import {lifeEventChanges,pendingRecordReviews,reviewMatchesAnimal,validateReviewedEventDates,saveAnimalWithReview,approveRecordReviews,undoRecordReview} from './record-review.mjs';
 import {utcDay,dailyReportView,saveDaily,automaticDaily,isPresent} from './daily.mjs';
 import {eventAnimalIds,eventChanges,historySummary,filterHistory} from './history.mjs';
 import {validateResearch,saveResearch,researchPage,renderResearchForm} from './research.mjs';
 import {validateEventDates,recoveryPreview,recoverAnimals,moveCage,removeCage,removeRoom,pedigreeMarkup} from './extensions.mjs';
-import {today,age,initialState,validateAnimal,saveAnimal,asOf,filterAnimals,cell,exportRows,csv,defaultColumns,saveGroup,groupTimeline} from './core.mjs';
+import {today,age,initialState,expandDemo,validateAnimal,saveAnimal,asOf,filterAnimals,cell,exportRows,csv,defaultColumns,saveGroup,groupTimeline} from './core.mjs';
 import {workbook,zip} from './xlsx.mjs';
 const $=s=>document.querySelector(s),esc=v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#39;");
 const key='st-andrews-colony-v1',pages=['overview','stock','housing','reports','groups','favourites','history','brief','research','recovery'];
@@ -164,6 +166,12 @@ function render(){ currentRows=[];
 function go(target,nextFilter){if(nextFilter)pendingFilter=nextFilter;if(page===target){if(nextFilter)filter=nextFilter;pendingFilter=null;tablePage=1;render();}else location.hash=target;}
 window.addEventListener('hashchange',()=>{filter=pendingFilter||{status:location.hash==='#favourites'?'all':'living'};pendingFilter=null;tablePage=1;render();});
 function cages(room,selected=''){const c=state.locations.filter(x=>x.room===room&&x.cage).map(x=>x.cage);if(selected&&!c.includes(selected))c.push(selected);$('#record-form').elements.cage.innerHTML=options(c,selected,'Communal / no cage');}
+function fieldControl(c,value,attr){
+ const id='choices_'+c.key,attrs=attr+' aria-label="'+esc(c.label)+'"'+(c.required?' required':'');
+ if(c.type==='select'&&!c.allowNew)return '<select '+attrs+'>'+options(c.options||[],String(value??''),'Not specified')+'</select>';
+ if(c.type==='textarea'||c.key==='notes'&&c.type==='text')return '<textarea '+attrs+' rows="3">'+esc(value)+'</textarea>';
+ return '<input '+attrs+' type="'+(c.type==='select'?'text':c.type||'text')+'" value="'+esc(value)+'"'+(c.type==='number'?' step="any"'+(c.min!==''&&c.min!=null?' min="'+esc(c.min)+'"':'')+(c.max!==''&&c.max!=null?' max="'+esc(c.max)+'"':''):'')+(c.type==='select'?' list="'+id+'"':'')+'>'+(c.type==='select'?'<datalist id="'+id+'">'+options(c.options||[])+'</datalist>':'');
+}
 function openRecord(id=null){
  formRevision=raw;editId=id;const a=id?state.animals.find(x=>x.id===id):null,f=$('#record-form');f.reset();$('#form-errors').textContent='';$('#record-title').textContent=id?'Edit '+id:'Add animal';f.elements.id.readOnly=!!id;
  $('#record-form .form-nav strong').textContent=id?'Editing '+id+' · Jump to section':'New animal · Jump to section';
@@ -173,19 +181,30 @@ function openRecord(id=null){
  for(const k of ['id','species','sex','line','room','cage','dob','dod','arrived','departed','mother','father','pob','notes'])f.elements[k].value=a?.[k]??(k==='sex'?'Unknown':k==='species'?'Bat':k==='room'?rooms()[0]:k==='cage'?'':'');
  for(const field of ['dob','dod','arrived','departed'])f.elements[field].max=utcDay();
  $('#parent-ids').innerHTML=state.animals.filter(x=>x.id!==id).map(x=>'<option value="'+esc(x.id)+'"></option>').join('');
- $('#custom-inputs').innerHTML=state.columns.filter(x=>x.custom).map(x=>'<label>'+esc(x.label)+(x.type==='select'?'<select name="'+x.key+'">'+options(x.options,a?.extra?.[x.key],'Not specified')+'</select>':'<input name="'+x.key+'" type="'+(x.type==='text'?'text':x.type)+'"'+(x.type==='number'?' step="any"':' maxlength="1000"')+' value="'+esc(a?.extra?.[x.key]??'')+'">')+'</label>').join('');
+ $('#custom-inputs').innerHTML=state.columns.filter(x=>x.custom).map(c=>'<label>'+esc(c.label)+(c.required?' *':'')+fieldControl(c,a?fieldValue(a,c):c.defaultValue||'','name="'+c.key+'"')+'<small>'+esc(c.description||'')+'</small></label>').join('');
+ for(const c of state.columns.filter(c=>configurable(c)&&!c.custom)){const el=f.elements[c.key];el.outerHTML=fieldControl(c,a?fieldValue(a,c):c.defaultValue||el.value,'name="'+c.key+'"');}
  $('#record-dialog').showModal();
 }
+let treeFull=false,treeAnimalId=null,treeZoom=1;
 function detail(id){
+ treeAnimalId=id;treeZoom=1;
  const view=page==='reports'?dailyReportView(state,reportDate,{view:reportMode}):null,historicalRecord=view?.mode==='saved'?view.record:null;
  const a=historicalRecord?historicalRecord.animals.find(x=>x.id===id):state.animals.find(x=>x.id===id);if(!a)return;
  const historical=!!historicalRecord,schema=historicalRecord?.columns||state.columns;
  const fields=items=>'<dl class="detail-grid">'+items.map(([label,value])=>'<div><dt>'+esc(label)+'</dt><dd>'+esc(value==null||value===''?'Not specified':value)+'</dd></div>').join('')+'</dl>';
  const section=(title,items)=>'<section class="record-detail-section"><h3>'+title+'</h3>'+fields(items)+'</section>';
  const events=state.events.filter(e=>eventAnimalIds(e).includes(id)&&(!historical||(e.at.slice(0,10)<=reportDate&&e.at<=historicalRecord.savedAt))).sort((a,b)=>b.at.localeCompare(a.at));
- $('#detail-content').innerHTML='<div class="dialog-heading"><div><div class="eyebrow">'+(historical?'SAVED REPORT · '+reportDate:'ANIMAL RECORD')+'</div><h2>'+esc(a.id)+'</h2></div><button class="icon-button" data-close="detail-dialog" aria-label="Close animal details">×</button></div><div class="record-summary" role="group" aria-label="Record actions">'+(!historical&&canEdit()?'<button class="button primary" data-edit="'+esc(a.id)+'">Edit '+esc(a.id)+'</button>':'')+'<button class="button secondary" data-action="family-tree">View family tree</button>'+animalStatus(a)+(historical?'<span>Read-only saved state</span>':'')+'</div>'+section('Identity & location',[['Species',a.species],['Sex',a.sex],['Line',a.line],['Room',a.room],['Cage',a.cage||'Communal / no cage'],['Age',age(a.dob,historical?reportDate:utcDay(),a.dod)]])+section('Life events',[['Birth date',a.dob],['Arrival date',a.arrived],['Death date',a.dod],['Departure date',a.departed]])+section('Family',[['Parent 1',a.mother],['Parent 2',a.father],['Place of birth',a.pob]])+'<section class="record-detail-section"><h3>Notes</h3><p class="detail-notes">'+esc(a.notes||'No notes recorded.')+'</p>'+fields(schema.filter(x=>x.custom).map(f=>[f.label,a.extra?.[f.key]]))+'</section>'+pedigreeMarkup(historical?historicalRecord.animals:state.animals,id,esc)+'<section class="detail-history"><div class="section-heading"><h3>Record history</h3><button class="text-button" data-history-animal="'+esc(id)+'">Filter all history for this bat</button></div>'+events.slice(0,8).map(historyItem).join('')+(events.length>8?'<p class="subtle">Showing the latest 8 of '+events.length+' events. Use the history filter to see all.</p>':'')+'</section>';
+ $('#detail-content').innerHTML='<div class="dialog-heading"><div><div class="eyebrow">'+(historical?'SAVED REPORT · '+reportDate:'ANIMAL RECORD')+'</div><h2>'+esc(a.id)+'</h2></div><button class="icon-button" data-close="detail-dialog" aria-label="Close animal details">×</button></div><div class="record-summary" role="group" aria-label="Record actions">'+(!historical&&canEdit()?'<button class="button primary" data-edit="'+esc(a.id)+'">Edit '+esc(a.id)+'</button>':'')+'<button class="button secondary" data-action="family-tree">View family tree</button>'+animalStatus(a)+(historical?'<span>Read-only saved state</span>':'')+'</div>'+section('Identity & location',[['Species',a.species],['Sex',a.sex],['Line',a.line],['Room',a.room],['Cage',a.cage||'Communal / no cage'],['Age',age(a.dob,historical?reportDate:utcDay(),a.dod)]])+section('Life events',[['Birth date',a.dob],['Arrival date',a.arrived],['Death date',a.dod],['Departure date',a.departed]])+section('Family',[['Parent 1',a.mother],['Parent 2',a.father],['Place of birth',a.pob]])+'<section class="record-detail-section"><h3>Notes</h3><p class="detail-notes">'+esc(a.notes||'No notes recorded.')+'</p>'+fields(schema.filter(x=>x.custom).map(f=>[f.label,a.extra?.[f.key]]))+'</section>'+familyTree(a,historical?historicalRecord.animals:state.animals,esc,treeFull)+'<section class="detail-history"><div class="section-heading"><h3>Record history</h3><button class="text-button" data-history-animal="'+esc(id)+'">Filter all history for this bat</button></div>'+events.slice(0,8).map(historyItem).join('')+(events.length>8?'<p class="subtle">Showing the latest 8 of '+events.length+' events. Use the history filter to see all.</p>':'')+'</section>';
  if(!$('#detail-dialog').open)$('#detail-dialog').showModal();applyRole();
 }
+function zoomTree(value){treeZoom=Math.max(.1,Math.min(2,value));const canvas=$('.family-canvas');if(canvas)canvas.style.zoom=treeZoom;const output=$('#tree-zoom-value');if(output)output.textContent=Math.round(treeZoom*100)+'%';}
+document.addEventListener('click',e=>{
+ const b=e.target.closest('button');if(!b)return;
+ if(b.dataset.treeMode){treeFull=b.dataset.treeMode==='full';detail(treeAnimalId);}
+ if(b.dataset.treeZoom)zoomTree(treeZoom+Number(b.dataset.treeZoom));
+ if(b.hasAttribute('data-tree-fit')){zoomTree(1);const viewport=$('.family-scroll'),canvas=$('.family-canvas');zoomTree(Math.min(1,(viewport.clientWidth-24)/canvas.scrollWidth));viewport.scrollTo(0,0);}
+ if(b.hasAttribute('data-tree-expand')){$('#detail-dialog').classList.toggle('expanded-tree');b.textContent=$('#detail-dialog').classList.contains('expanded-tree')?'Restore view':'Expand view';}
+});
 function download(content,name,type){const url=URL.createObjectURL(new Blob([content],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
 function exportFile(format){
  const view=page==='reports'?dailyReportView(state,reportDate,{view:reportMode}):null,record=view?.mode==='saved'?view.record:null;
@@ -197,12 +216,17 @@ function exportFile(format){
  notify('Exported '+(rows.length-1)+' records'+(view?' from the '+view.mode+' view.':'.'));
 }
 function renderColumns(){
- $('#column-list').innerHTML=columnDraft.map((c,i)=>'<div class="column-row" data-row-tone="'+(i%2?'alternate':'base')+'"><input type="checkbox" data-visible="'+i+'" aria-label="Show '+esc(c.label)+'"'+(c.visible?' checked':'')+'><input type="text" data-label="'+i+'" aria-label="Heading for '+esc(c.label)+'" maxlength="60" value="'+esc(c.label)+'"><small>'+esc(c.custom?c.type:'standard')+'</small><button data-move="'+i+'" data-direction="-1" aria-label="Move '+esc(c.label)+' up"'+(i===0?' disabled':'')+'>↑</button><button data-move="'+i+'" data-direction="1" aria-label="Move '+esc(c.label)+' down"'+(i===columnDraft.length-1?' disabled':'')+'>↓</button></div>').join('');
+ $('#column-list').innerHTML=columnDraft.map((c,i)=>'<div class="field-card" data-row-tone="'+(i%2?'alternate':'base')+'"><div class="column-row"><input type="checkbox" data-visible="'+i+'" aria-label="Show '+esc(c.label)+'"'+(c.visible?' checked':'')+'><input type="text" data-label="'+i+'" aria-label="Heading for '+esc(c.label)+'" maxlength="60" value="'+esc(c.label)+'"><button data-move="'+i+'" data-direction="-1" aria-label="Move '+esc(c.label)+' up"'+(i===0?' disabled':'')+'>↑</button><button data-move="'+i+'" data-direction="1" aria-label="Move '+esc(c.label)+' down"'+(i===columnDraft.length-1?' disabled':'')+'>↓</button></div>'+(configurable(c)?'<details><summary>Value settings · '+esc(fieldTypes.find(([t])=>t===c.type)?.[1]||c.type)+'</summary><div class="form-grid">'+fieldSettings(c,i)+'</div></details>':'<small class="subtle">'+(['id','age'].includes(c.key)?'Identity or calculated value':'Uses colony rules for locations, sex, dates or parent records')+'</small>')+'</div>').join('');
+}
+function fieldSettings(c,i){
+ const setting=(k)=>'data-setting="'+k+'" data-index="'+i+'"';
+ return '<label>Value type<select '+setting('type')+'>'+fieldTypes.map(([k,label])=>'<option value="'+k+'"'+(c.type===k?' selected':'')+'>'+label+'</option>').join('')+'</select></label><label>Default for new animals<input '+setting('defaultValue')+' value="'+esc(c.defaultValue||'')+'"></label><label class="check-label"><input type="checkbox" '+setting('required')+(c.required?' checked':'')+'> Value required</label><label>Description / guidance<input '+setting('description')+' value="'+esc(c.description||'')+'"></label>'+(c.type==='select'?'<label class="full">Choices (one per line)<textarea '+setting('options')+' rows="4">'+esc((c.options||[]).join('\n'))+'</textarea><button type="button" class="text-button" data-values="'+i+'">Add choices from existing values</button></label><label class="check-label full"><input type="checkbox" '+setting('allowNew')+(c.allowNew?' checked':'')+'> Allow typing new choices · new values join the list when saved</label>':'')+(c.type==='number'?'<label>Minimum (optional)<input type="number" step="any" '+setting('min')+' value="'+esc(c.min??'')+'"></label><label>Maximum (optional)<input type="number" step="any" '+setting('max')+' value="'+esc(c.max??'')+'"></label>':'');
 }
 function openColumns(){formRevision=raw;columnDraft=structuredClone(state.columns);researchFieldDraft=structuredClone(state.researchFields);$('#sex-choices').value=sexChoices().join(', ');$('#research-types').value=state.researchTypes.join(', ');$('#field-form').reset();$('#field-error').textContent='';renderColumns();$('#columns-dialog').showModal();}
 document.addEventListener('click',async e=>{
  const b=e.target.closest('button,a');if(!b)return;
  if(b.dataset.help){showHelp(b.dataset.help);return;}
+ if(b.dataset.values!==undefined){const i=Number(b.dataset.values),c=columnDraft[i];c.options=[...new Set([...(c.options||[]),...state.animals.map(a=>String(fieldValue(a,c))).filter(Boolean)])];renderColumns();$('#column-list').children[i].querySelector('details').open=true;return;}
  if(await handleRecordReview(b))return;
  if(b.dataset.close){$('#'+b.dataset.close).close();return;}
  if(isWriteAction(b)&&!canEdit()){notify('Student preview is read-only.');return;}
@@ -238,6 +262,7 @@ document.addEventListener('click',async e=>{
 });
 document.addEventListener('input',e=>{
  const el=e.target;
+ if(el.dataset.setting){const c=columnDraft[Number(el.dataset.index)],k=el.dataset.setting;c[k]=el.type==='checkbox'?el.checked:k==='options'?choices(el.value):el.value;}
  if(el.id==='search'){filter.search=el.value;tablePage=1;$('#register-table').innerHTML=registerResults(filterAnimals(state.animals,{...filter,favourites:page==='favourites'?state.favourites:null,group:filter.groupId?state.groups.find(g=>g.id===filter.groupId)?.animalIds:null}));}
  if(el.dataset.label!==undefined)columnDraft[Number(el.dataset.label)].label=el.value;
  if(el.id==='history-search'){historyFilters.search=el.value;historyPage=1;$('#history-results').innerHTML=historyResults();}
@@ -272,17 +297,19 @@ $('#group-form').addEventListener('submit',async e=>{
  if(await commit(saveGroup(state,group,actorName()),groupRevision)){selectedGroupId=group.id;$('#group-dialog').close();render();notify('Research group saved with membership history.');}
 });
 $('#field-form').addEventListener('submit',e=>{
- e.preventDefault();if(role!=='administrator')return;const f=e.target,label=f.elements.label.value.trim(),type=f.elements.type.value,opts=choices(f.elements.options.value),draft=f.elements.target.value==='research'?researchFieldDraft:columnDraft;
- if(!label||draft.some(c=>c.label.toLowerCase()===label.toLowerCase())||(type==='select'&&!opts.length)){$('#field-error').textContent='Use a unique heading and supply choices for a dropdown.';return;}
- draft.push({key:'custom_'+crypto.randomUUID().replaceAll('-',''),label,type,options:opts,required:f.elements.requiredField.checked,custom:true,visible:true});f.reset();$('#field-error').textContent='';renderColumns();
+ e.preventDefault();if(role!=='administrator')return;const f=e.target,label=f.elements.label.value.trim(),type=f.elements.type.value==='textarea'&&f.elements.target.value==='research'?'text':f.elements.type.value,allowNew=f.elements.target.value==='animal'&&f.elements.allowNew.checked,opts=choices(f.elements.options.value),draft=f.elements.target.value==='research'?researchFieldDraft:columnDraft;
+ if(!label||draft.some(c=>c.label.toLowerCase()===label.toLowerCase())||(type==='select'&&!allowNew&&!opts.length)){$('#field-error').textContent='Use a unique heading and supply choices for a dropdown.';return;}
+ draft.push({key:'custom_'+crypto.randomUUID().replaceAll('-',''),label,type,allowNew,options:opts,required:f.elements.requiredField.checked,custom:true,visible:true});f.reset();$('#field-error').textContent='';renderColumns();
 });
 $('#save-columns').addEventListener('click',async()=>{
  if(role!=='administrator')return;
  const sex=choices($('#sex-choices').value),types=choices($('#research-types').value),all=[...columnDraft,...researchFieldDraft];
- const invalid=all.some(c=>!c.label.trim()||(c.type==='select'&&!c.options?.length));
+ const schemaIssues=schemaErrors(columnDraft,state.animals);
+ if(schemaIssues.length){$('#field-error').textContent=schemaIssues.join(' ');return;}
+ const invalid=all.some(c=>!c.label.trim()||(c.type==='select'&&!c.allowNew&&!c.options?.length));
  if(!columnDraft.some(c=>c.visible)||invalid||new Set(columnDraft.map(c=>c.label.trim().toLowerCase())).size!==columnDraft.length||new Set(researchFieldDraft.map(c=>c.label.trim().toLowerCase())).size!==researchFieldDraft.length||!sex.length||!types.length){$('#field-error').textContent='Keep visible columns, unique headings and valid dropdown choices.';return;}
  if(state.animals.some(a=>!sex.includes(a.sex))||state.researchEntries.some(entry=>!types.includes(entry.type))){$('#field-error').textContent='Keep sex choices and activity categories used by existing records.';return;}
- for(const field of columnDraft.filter(c=>c.type==='select'))if(state.animals.some(a=>a.extra?.[field.key]&&!field.options.includes(a.extra[field.key]))){$('#field-error').textContent='Keep choices currently used in '+field.label+'.';return;}
+
  for(const field of researchFieldDraft.filter(c=>c.type==='select'))if(state.researchEntries.some(entry=>entry.fields?.[field.key]&&!field.options.includes(entry.fields[field.key]))){$('#field-error').textContent='Keep choices currently used in '+field.label+'.';return;}
  const changes=all.filter(c=>JSON.stringify(c)!==JSON.stringify([...state.columns,...state.researchFields].find(x=>x.key===c.key))).map(c=>c.label);
  if(changes.length>=5&&!await confirmChanges('Review configuration changes','You are changing '+changes.length+' field definitions. Earlier daily records retain their own definitions.',changes))return;
@@ -294,9 +321,9 @@ $('#save-columns').addEventListener('click',async()=>{
 $('#backup').addEventListener('click',()=>download(JSON.stringify(state,null,2),'colony-demo-backup-'+utcDay()+'.json','application/json'));
 window.addEventListener('storage',e=>{if(e.key===key)notify('Data changed in another tab. Reload to use its latest saved state.');});
 
-const choices=value=>[...new Set(value.split(',').map(x=>x.trim()).filter(Boolean))];
+
 const help={
- overview:['Colony overview','Counts show living animals currently present, excluding deaths, departures and archived records. The sample has 18 synthetic animals; approximately 170 is the expected real starting volume. Use the register to find a bat or open Rooms & cages to locate it.'],
+ overview:['Colony overview','Counts show living animals currently present, excluding deaths, departures and archived records. The sample has 170 synthetic animals across several family generations. Use the register to find a bat or open Rooms & cages to locate it.'],
  stock:['Animal register','Death and departure changes remain in Changes awaiting approval across refreshes. Open, edit, undo or approve them individually, or approve all after reviewing the list. Pending changes affect live stock and reports immediately; approval closes the queue and records who checked them. Unapproved dates can be corrected or undone after their recording day. Animal IDs are unique and cannot be renamed. Room is required; cage is optional. Unknown values can be represented using configured choices or blank optional fields. Event dates in earlier days are final. A newly arriving adult can have an earlier birth date as background information. Record its arrival today. Custom fields are designed in Administrator preview.'],
  housing:['Rooms and cages','Every housed bat has a room. Communal accommodation has no cage. A cage belongs to a room. Moving an occupied cage moves its current occupants together and records each move. Administrator preview can add locations and remove empty rooms or cages after review. Move all present animals first. Removing a room also removes its empty cages. Animal records, historical locations and saved daily reports are retained.'],
  reports:['Daily records','Live today updates immediately after each animal save, including births and deaths. Saved report shows your last capture, with frozen values and headings. Download saved CSV set always exports the capture; the individual CSV and Excel buttons export the selected view. Save today to capture three consistent tables: current stock, births today and deaths today. Saving again today replaces this daily set and keeps the replacement in history. At midnight UTC the set becomes final. Automatic fallback preserves an existing manual set; it only generates yesterday if missing and history is available. It runs while this tab is open or checks yesterday on reopening. It is not a server scheduler. Each saved set contains CSV copies with frozen headings; download all three as a ZIP. These copies are stored in this browser, so download a full backup as well.'],
@@ -327,7 +354,7 @@ function recovery(){
 const baseRenderColumns=renderColumns;
 renderColumns=function(){
  baseRenderColumns();
- $('#column-list').innerHTML=columnDraft.map((c,i)=>'<div class="column-row" data-row-tone="'+(i%2?'alternate':'base')+'"><input type="checkbox" data-visible="'+i+'" aria-label="Show '+esc(c.label)+'"'+(c.visible?' checked':'')+'><input type="text" data-label="'+i+'" aria-label="Heading for '+esc(c.label)+'" value="'+esc(c.label)+'" maxlength="60"><small>'+esc(c.custom?c.type:'protected')+'</small><button data-move="'+i+'" data-direction="-1"'+(i===0?' disabled':'')+' aria-label="Move '+esc(c.label)+' up">↑</button><button data-move="'+i+'" data-direction="1"'+(i===columnDraft.length-1?' disabled':'')+' aria-label="Move '+esc(c.label)+' down">↓</button></div>'+(c.custom?'<div class="column-details" data-row-tone="'+(i%2?'alternate':'base')+'"><label class="inline-check"><input type="checkbox" data-required-field="'+i+'"'+(c.required?' checked':'')+'> Required</label>'+(c.type==='select'?'<label>Allowed choices<input data-field-choices="'+i+'" value="'+esc((c.options||[]).join(', '))+'"></label>':'')+'</div>':'')).join('');
+
  $('#research-field-list').innerHTML=researchFieldDraft.map((c,i)=>'<div class="column-row" data-row-tone="'+(i%2?'alternate':'base')+'"><input type="text" data-research-label="'+i+'" aria-label="Research heading '+esc(c.label)+'" value="'+esc(c.label)+'" maxlength="60"><small>'+esc(c.type)+'</small></div><div class="column-details" data-row-tone="'+(i%2?'alternate':'base')+'"><label class="inline-check"><input type="checkbox" data-research-required="'+i+'"'+(c.required?' checked':'')+'> Required</label>'+(c.type==='select'?'<label>Allowed choices<input data-research-choices="'+i+'" value="'+esc((c.options||[]).join(', '))+'"></label>':'')+'</div>').join('')||'<p class="subtle">Add fields below to define measurements or observations for research entries.</p>';
 };
 async function extensionClick(b){
@@ -375,6 +402,7 @@ async function extensionClick(b){
  return false;
 }
 async function extensionChange(el){
+ if(el.dataset.setting==='type'){const i=Number(el.dataset.index);columnDraft[i].type=el.value;renderColumns();$('#column-list').children[i].querySelector('details').open=true;return true;}
  if(el.hasAttribute('data-research-group')){const group=state.groups.find(g=>g.id===el.value);if(group)document.querySelectorAll('#research-form [name=animalIds]').forEach(box=>box.checked=group.animalIds.includes(box.value));return true;}
  if(el.id==='role'){role=el.value;for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();render();return true;}
  if(el.id==='auto-daily'){
@@ -410,6 +438,8 @@ async function checkAutomatic(){
  if(automaticRunning||storageIssue)return;automaticRunning=true;
  try{const next=automaticDaily(state,new Date().toISOString());if(next.dailyRecords.length!==state.dailyRecords.length){if(await commit(next)){render();notify('Automatic daily record saved from yesterday’s recorded state.');}}}catch(error){notify('Automatic record failed: '+error.message);}finally{automaticRunning=false;}
 }
+const expanded=expandDemo(state);
+if(expanded!==state&&!storageIssue)await commit(expanded);
 render();
 // Persist the tracking start once; no synthetic historic daily records are invented.
 if(!storageIssue&&(!raw||!JSON.parse(raw).automaticStarted))await commit(structuredClone(state));
